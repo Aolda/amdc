@@ -1,0 +1,212 @@
+<mxfile host="app.diagrams.net" modified="2026-04-06" agent="AMDC" version="24.0.0" type="device">
+  <diagram id="amdc-architecture" name="AMDC Architecture">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="AMDC Architecture" style="text;html=1;fontSize=24;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="600" y="20" width="400" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Data Sources Group -->
+        <mxCell id="ds-group" value="Data Sources (Plugin)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontStyle=1;verticalAlign=top;spacingTop=5;" vertex="1" parent="1">
+          <mxGeometry x="40" y="180" width="240" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="ds-metrics" value="Metrics&#xa;(Prometheus, etc.)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="70" y="230" width="180" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ds-logs" value="Logs&#xa;(Loki, File, etc.)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="70" y="290" width="180" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ds-events" value="Events&#xa;(Webhook, CI/CD, etc.)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="70" y="350" width="180" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ds-state" value="State&#xa;(Health Check, Infra)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="70" y="410" width="180" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- AMDC Server (includes Trigger System) -->
+        <mxCell id="server-group" value="AMDC Server (Node.js)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=16;fontStyle=1;verticalAlign=top;spacingTop=5;" vertex="1" parent="1">
+          <mxGeometry x="360" y="80" width="680" height="560" as="geometry" />
+        </mxCell>
+
+        <!-- Trigger System inside Server -->
+        <mxCell id="trigger-group" value="Trigger System" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=5;" vertex="1" parent="1">
+          <mxGeometry x="390" y="120" width="200" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="trigger-scheduler" value="Pull Scheduler" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="410" y="160" width="160" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="trigger-rule" value="Rule Engine&#xa;(YAML/Code)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="410" y="205" width="160" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="trigger-api" value="External API Call&#xa;(ML Model, etc.)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="410" y="260" width="160" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- API Server -->
+        <mxCell id="server-api" value="API Server" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="620" y="120" width="180" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- MCP Server -->
+        <mxCell id="server-mcp" value="MCP Server&#xa;(Permission Filter)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#82b366;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="830" y="120" width="180" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Terminal Server -->
+        <mxCell id="server-terminal" value="Terminal Server (xterm.js / WebSocket)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="620" y="180" width="390" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Agent Management inside server -->
+        <mxCell id="agent-mgmt" value="Agent Management" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#82b366;fontSize=12;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="390" y="340" width="620" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-builtin" value="Built-in Agent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="410" y="380" width="100" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-default" value="Default Agent&#xa;(Monitor, QA)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="525" y="380" width="110" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-custom" value="Custom Agent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="650" y="380" width="100" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-components" value="agent.md + skills + allowed MCP tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="410" y="430" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="agent-prompt" value="System Prompt (Report 최소 규격)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="665" y="430" width="230" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Claude Code Subprocess inside server -->
+        <mxCell id="claude-group" value="Claude Code Subprocess" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=5;" vertex="1" parent="1">
+          <mxGeometry x="390" y="500" width="620" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="claude-1" value="Session 1&#xa;(One-shot)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="420" y="540" width="120" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="claude-2" value="Session 2&#xa;(Interactive)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="560" y="540" width="120" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="claude-n" value="Session N&#xa;..." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="700" y="540" width="120" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- File System -->
+        <mxCell id="fs-group" value="File System" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontStyle=1;verticalAlign=top;spacingTop=5;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="80" width="200" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="fs-settings" value="Settings (YAML)&#xa;Trigger / Rule / Agent&#xa;MCP / Data Source" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#666666;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="130" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="fs-reports" value="Reports (JSON)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#666666;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="205" width="160" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="fs-infra" value="Infra Context" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#666666;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="255" width="160" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="fs-sessions" value="Session Logs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#666666;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="305" width="160" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- Frontend -->
+        <mxCell id="frontend" value="AMDC Admin Page&#xa;(Frontend)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="460" width="200" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="fe-report" value="Report 확인" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="505" width="75" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe-chat" value="Claude 대화" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1245" y="505" width="75" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe-approve" value="승인 / 반려" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="550" width="75" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="fe-settings" value="설정 관리" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1245" y="550" width="75" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Target Service -->
+        <mxCell id="target" value="Target Service&#xa;(AMDB, etc.)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#d79b00;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="590" width="240" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Notification -->
+        <mxCell id="notify" value="Notification&#xa;(Discord, etc.)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#d79b00;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="390" width="200" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows -->
+        <!-- Data Sources -> Trigger (Pull) -->
+        <mxCell id="arrow1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#6c8ebf;" edge="1" source="ds-group" target="trigger-group" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow1-label" value="Pull / Push" style="edgeLabel;html=1;fontSize=10;fontColor=#6c8ebf;" vertex="1" connectable="0" parent="arrow1">
+          <mxGeometry x="-0.1" relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Server -> File System -->
+        <mxCell id="arrow5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#666666;" edge="1" source="server-group" target="fs-group" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow5-label" value="Read / Write" style="edgeLabel;html=1;fontSize=10;fontColor=#666666;" vertex="1" connectable="0" parent="arrow5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Frontend -> Server API -->
+        <mxCell id="arrow6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" source="frontend" target="server-group" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow6-label" value="API / WebSocket" style="edgeLabel;html=1;fontSize=10;fontColor=#9673a6;" vertex="1" connectable="0" parent="arrow6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Server -> Notification -->
+        <mxCell id="arrow7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#d79b00;" edge="1" source="server-group" target="notify" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow7-label" value="Report Alert" style="edgeLabel;html=1;fontSize=10;fontColor=#d79b00;" vertex="1" connectable="0" parent="arrow7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Claude Subprocess -> MCP Server (internal) -->
+        <mxCell id="arrow-claude-mcp" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#b85450;" edge="1" source="claude-group" target="server-mcp" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow-claude-mcp-label" value="MCP Call" style="edgeLabel;html=1;fontSize=10;fontColor=#b85450;" vertex="1" connectable="0" parent="arrow-claude-mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- MCP Server -> Target Service -->
+        <mxCell id="arrow-mcp-target" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#d79b00;" edge="1" source="server-mcp" target="target" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="920" y="80" />
+              <mxPoint x="160" y="80" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arrow-mcp-target-label" value="Permitted Tools Only" style="edgeLabel;html=1;fontSize=10;fontColor=#d79b00;" vertex="1" connectable="0" parent="arrow-mcp-target">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Human in the Loop: Frontend -> Claude via Server -->
+        <mxCell id="arrow8" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#9673a6;dashed=1;" edge="1" source="frontend" target="claude-group" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1120" y="560" />
+              <mxPoint x="1120" y="560" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arrow8-label" value="Human in the Loop&#xa;(승인/피드백 → 재실행)" style="edgeLabel;html=1;fontSize=10;fontColor=#9673a6;" vertex="1" connectable="0" parent="arrow8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
