@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
 import { createApp } from "../app.js";
 import { createDatabase, type DB } from "../db/index.js";
-import { syncMcpsToDb } from "../mcp/mcp-sync.js";
+import { syncMcpsToDb, seedNativeToolLevels } from "../mcp/mcp-sync.js";
 import { createMcpRegistry } from "../mcp/mcp-registry.js";
 import { echoMeta } from "../mcp/plugins/echo.js";
 import type { Express } from "express";
@@ -13,6 +13,7 @@ let db: DB;
 beforeEach(async () => {
   db = await createDatabase(":memory:");
   await syncMcpsToDb(db, [echoMeta]);
+  await seedNativeToolLevels(db, [echoMeta]);
   const mcpRegistry = createMcpRegistry([echoMeta]);
   app = createApp({ db, mcpRegistry });
 });
@@ -54,6 +55,32 @@ describe("GET /api/mcps/:name/tools", () => {
 
   it("returns 404 for unknown mcp", async () => {
     const res = await request(app).get("/api/mcps/unknown/tools");
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("PUT /api/mcps/:name/tools/:toolName", () => {
+  it("updates a tool level and GET reflects it", async () => {
+    const put = await request(app)
+      .put("/api/mcps/echo/tools/echo")
+      .send({ level: 1 });
+    expect(put.status).toBe(200);
+    expect(put.body.data.level).toBe(1);
+    const list = await request(app).get("/api/mcps/echo/tools");
+    expect(list.body.data[0].level).toBe(1);
+  });
+
+  it("returns 400 for invalid level", async () => {
+    const res = await request(app)
+      .put("/api/mcps/echo/tools/echo")
+      .send({ level: 5 });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 for unknown tool", async () => {
+    const res = await request(app)
+      .put("/api/mcps/echo/tools/nope")
+      .send({ level: 1 });
     expect(res.status).toBe(404);
   });
 });

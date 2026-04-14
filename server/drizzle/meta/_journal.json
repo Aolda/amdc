@@ -43,6 +43,13 @@
       "when": 1776135651417,
       "tag": "0005_melted_risque",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1776148490718,
+      "tag": "0006_thin_prowler",
+      "breakpoints": true
     }
   ]
 }

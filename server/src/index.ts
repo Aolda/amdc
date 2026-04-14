@@ -5,7 +5,12 @@ import { createMarkdownStore } from "./storage/markdown.js";
 import { createSessionRegistry } from "./mcp/session-registry.js";
 import { createMcpRegistry } from "./mcp/mcp-registry.js";
 import { AgentDefaultPermissionChecker } from "./mcp/permission.js";
-import { loadUpstreamMcpsFromDb, syncMcpsToDb } from "./mcp/mcp-sync.js";
+import {
+  fetchMcpToolLevels,
+  loadUpstreamMcpsFromDb,
+  seedNativeToolLevels,
+  syncMcpsToDb,
+} from "./mcp/mcp-sync.js";
 import { echoMeta } from "./mcp/plugins/echo.js";
 import { findAgentById, findAllAgents } from "./agents/repository.js";
 
@@ -21,6 +26,7 @@ async function main() {
 
   const nativeMcpMetas = [echoMeta];
   await syncMcpsToDb(db, nativeMcpMetas);
+  await seedNativeToolLevels(db, nativeMcpMetas);
   const upstreamMcpMetas = await loadUpstreamMcpsFromDb(db);
   const mcpRegistry = createMcpRegistry([
     ...nativeMcpMetas,
@@ -31,6 +37,10 @@ async function main() {
     getAgent: async (agentId) => {
       const row = await findAgentById(db, agentStore, agentId);
       return row ? { id: row.id, mcps: row.mcps } : null;
+    },
+    getToolDefaultLevel: async (mcpName, toolName) => {
+      const levels = await fetchMcpToolLevels(db, mcpName);
+      return levels.get(toolName) ?? null;
     },
   });
 

@@ -104,6 +104,20 @@ export const agentMcps = sqliteTable(
   }),
 );
 
+export const mcpTools = sqliteTable(
+  "mcp_tools",
+  {
+    mcpName: text("mcp_name")
+      .notNull()
+      .references(() => mcps.name, { onDelete: "cascade" }),
+    toolName: text("tool_name").notNull(),
+    level: integer("level").notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.mcpName, table.toolName] }),
+  }),
+);
+
 export const agentMcpTools = sqliteTable(
   "agent_mcp_tools",
   {

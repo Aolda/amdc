@@ -28,16 +28,22 @@ export class AlwaysDenyAllowListProvider implements AllowListProvider {
 export interface AgentDefaultPermissionCheckerDeps {
   getAgent: (agentId: string) => Promise<AgentLike | null>;
   allowListProvider?: AllowListProvider;
+  getToolDefaultLevel?: (
+    mcpName: string,
+    toolName: string,
+  ) => Promise<ToolLevel | null>;
 }
 
 export class AgentDefaultPermissionChecker implements PermissionChecker {
   private readonly getAgent: AgentDefaultPermissionCheckerDeps["getAgent"];
   private readonly allowListProvider: AllowListProvider;
+  private readonly getToolDefaultLevel?: AgentDefaultPermissionCheckerDeps["getToolDefaultLevel"];
 
   constructor(deps: AgentDefaultPermissionCheckerDeps) {
     this.getAgent = deps.getAgent;
     this.allowListProvider =
       deps.allowListProvider ?? new AlwaysDenyAllowListProvider();
+    this.getToolDefaultLevel = deps.getToolDefaultLevel;
   }
 
   async check(
@@ -53,7 +59,15 @@ export class AgentDefaultPermissionChecker implements PermissionChecker {
     if (!link) {
       return { allowed: false, reason: "mcp not in agent allow list" };
     }
-    const effectiveLevel: ToolLevel = resolveEffectiveLevel(link, tool);
+    let baseLevel: ToolLevel = tool.level;
+    if (this.getToolDefaultLevel) {
+      const dbLevel = await this.getToolDefaultLevel(mcp.name, tool.name);
+      if (dbLevel !== null) baseLevel = dbLevel;
+    }
+    const effectiveLevel: ToolLevel = resolveEffectiveLevel(link, {
+      ...tool,
+      level: baseLevel,
+    });
     if (effectiveLevel === 3) {
       return { allowed: true };
     }

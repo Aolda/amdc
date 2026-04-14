@@ -3,7 +3,8 @@ import { eq } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { mcps as mcpsTable } from "../db/schema.js";
 import type { McpRegistry } from "../mcp/mcp-registry.js";
-import type { UpstreamMcpMeta } from "../mcp/types.js";
+import type { ToolLevel, UpstreamMcpMeta } from "../mcp/types.js";
+import { fetchMcpToolLevels, upsertMcpToolLevel } from "../mcp/mcp-sync.js";
 
 interface UpstreamMetadata {
   upstreamUrl: string;
@@ -53,12 +54,58 @@ export function createMcpsRouter(
       return;
     }
     const tools = await mcp.listTools();
-    res.json({
-      data: tools.map((tool) => ({
+    const dbLevels = await fetchMcpToolLevels(db, req.params.name);
+    const missingRows: { toolName: string; level: ToolLevel }[] = [];
+    const merged = tools.map((tool) => {
+      const dbLevel = dbLevels.get(tool.name);
+      if (dbLevel === undefined) {
+        missingRows.push({ toolName: tool.name, level: tool.level });
+      }
+      return {
         name: tool.name,
         description: tool.description,
-        level: tool.level,
-      })),
+        level: dbLevel ?? tool.level,
+      };
+    });
+    for (const row of missingRows) {
+      await upsertMcpToolLevel(db, req.params.name, row.toolName, row.level);
+    }
+    res.json({ data: merged });
+  });
+
+  router.put("/:name/tools/:toolName", async (req, res) => {
+    if (!registry) {
+      res.status(503).json({ error: { message: "registry not configured" } });
+      return;
+    }
+    const mcp = registry.findMcp(req.params.name);
+    if (!mcp) {
+      res.status(404).json({ error: { message: "mcp not found" } });
+      return;
+    }
+    const { level } = req.body as { level?: number };
+    if (level === undefined || ![1, 2, 3].includes(level)) {
+      res.status(400).json({ error: { message: "level must be 1|2|3" } });
+      return;
+    }
+    const tools = await mcp.listTools();
+    const found = tools.find((t) => t.name === req.params.toolName);
+    if (!found) {
+      res.status(404).json({ error: { message: "tool not found" } });
+      return;
+    }
+    await upsertMcpToolLevel(
+      db,
+      req.params.name,
+      req.params.toolName,
+      level as ToolLevel,
+    );
+    res.json({
+      data: {
+        name: found.name,
+        description: found.description,
+        level,
+      },
     });
   });
 

@@ -215,6 +215,22 @@ export async function fetchMcpTools(
   return handleResponse<McpToolDefinition[]>(res);
 }
 
+export async function updateMcpToolLevel(
+  mcpName: string,
+  toolName: string,
+  level: ToolLevel,
+): Promise<McpToolDefinition> {
+  const res = await fetch(
+    `/api/mcps/${encodeURIComponent(mcpName)}/tools/${encodeURIComponent(toolName)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level }),
+    },
+  );
+  return handleResponse<McpToolDefinition>(res);
+}
+
 export interface CreateMcpInput {
   name: string;
   description?: string;

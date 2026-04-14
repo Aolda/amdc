@@ -1,6 +1,6 @@
-import { eq, ne } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import type { DB } from "../db/index.js";
-import { mcps } from "../db/schema.js";
+import { mcps, mcpTools } from "../db/schema.js";
 import type { McpMeta, ToolLevel, UpstreamMcpMeta } from "./types.js";
 
 function metadataFor(meta: McpMeta): string {
@@ -30,6 +30,70 @@ export async function syncMcpsToDb(db: DB, metas: McpMeta[]): Promise<void> {
     } else {
       await db.insert(mcps).values({ ...row, createdAt: now });
     }
+  }
+}
+
+export async function seedNativeToolLevels(
+  db: DB,
+  metas: McpMeta[],
+): Promise<void> {
+  for (const meta of metas) {
+    if (meta.kind !== "native") continue;
+    for (const tool of meta.tools) {
+      const level: ToolLevel = tool.level ?? meta.defaultLevel;
+      const existing = await db
+        .select()
+        .from(mcpTools)
+        .where(
+          and(
+            eq(mcpTools.mcpName, meta.name),
+            eq(mcpTools.toolName, tool.name),
+          ),
+        );
+      if (existing[0]) continue;
+      await db.insert(mcpTools).values({
+        mcpName: meta.name,
+        toolName: tool.name,
+        level,
+      });
+    }
+  }
+}
+
+export async function fetchMcpToolLevels(
+  db: DB,
+  mcpName: string,
+): Promise<Map<string, ToolLevel>> {
+  const rows = await db
+    .select()
+    .from(mcpTools)
+    .where(eq(mcpTools.mcpName, mcpName));
+  const map = new Map<string, ToolLevel>();
+  for (const row of rows) {
+    map.set(row.toolName, row.level as ToolLevel);
+  }
+  return map;
+}
+
+export async function upsertMcpToolLevel(
+  db: DB,
+  mcpName: string,
+  toolName: string,
+  level: ToolLevel,
+): Promise<void> {
+  const existing = await db
+    .select()
+    .from(mcpTools)
+    .where(and(eq(mcpTools.mcpName, mcpName), eq(mcpTools.toolName, toolName)));
+  if (existing[0]) {
+    await db
+      .update(mcpTools)
+      .set({ level })
+      .where(
+        and(eq(mcpTools.mcpName, mcpName), eq(mcpTools.toolName, toolName)),
+      );
+  } else {
+    await db.insert(mcpTools).values({ mcpName, toolName, level });
   }
 }
 
