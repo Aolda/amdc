@@ -4,11 +4,12 @@ import type { DB } from "../db/index.js";
 import { mcps as mcpsTable } from "../db/schema.js";
 import type { McpRegistry } from "../mcp/mcp-registry.js";
 import type { ToolLevel, UpstreamMcpMeta } from "../mcp/types.js";
-import { fetchMcpToolLevels, upsertMcpToolLevel } from "../mcp/mcp-sync.js";
+import { upsertMcpToolLevel } from "../mcp/mcp-sync.js";
 import type { WrapperConfig, WrapperKind, WrapperRow } from "../mcp/wrapper.js";
 import {
   deleteWrapperRow,
   fetchWrapperRow,
+  fetchWrapperRows,
   insertWrapperRow,
   updateWrapperRow,
 } from "../mcp/wrapper-repository.js";
@@ -149,24 +150,48 @@ export function createMcpsRouter(
       res.status(404).json({ error: { message: "mcp not found" } });
       return;
     }
-    const tools = await mcp.listTools();
-    const dbLevels = await fetchMcpToolLevels(db, req.params.name);
-    const missingRows: { toolName: string; level: ToolLevel }[] = [];
-    const merged = tools.map((tool) => {
-      const dbLevel = dbLevels.get(tool.name);
-      if (dbLevel === undefined) {
-        missingRows.push({ toolName: tool.name, level: tool.level });
+    const baseline = await mcp.listTools();
+    const dbRows = await fetchWrapperRows(db, req.params.name);
+    const dbByName = new Map(dbRows.map((r) => [r.wrapperName, r]));
+    const data: Record<string, unknown>[] = [];
+    const toSeed: { name: string; level: ToolLevel }[] = [];
+    for (const base of baseline) {
+      const row = dbByName.get(base.name);
+      if (row) {
+        data.push(
+          wrapperRowToJson({
+            ...row,
+            description: row.description || base.description,
+            inputSchema:
+              Object.keys(row.inputSchema).length > 0
+                ? row.inputSchema
+                : base.inputSchema,
+          }),
+        );
+      } else {
+        data.push({
+          name: base.name,
+          wrapperName: base.name,
+          underlyingToolName: base.name,
+          kind: "mcp",
+          level: base.level,
+          description: base.description,
+          inputSchema: base.inputSchema,
+          hidden: false,
+          config: {},
+        });
+        toSeed.push({ name: base.name, level: base.level });
       }
-      return {
-        name: tool.name,
-        description: tool.description,
-        level: dbLevel ?? tool.level,
-      };
-    });
-    for (const row of missingRows) {
-      await upsertMcpToolLevel(db, req.params.name, row.toolName, row.level);
     }
-    res.json({ data: merged });
+    for (const row of dbRows) {
+      if (row.underlyingToolName !== row.wrapperName) {
+        data.push(wrapperRowToJson(row));
+      }
+    }
+    for (const seed of toSeed) {
+      await upsertMcpToolLevel(db, req.params.name, seed.name, seed.level);
+    }
+    res.json({ data });
   });
 
   router.put("/:name/tools/:toolName", async (req, res) => {
