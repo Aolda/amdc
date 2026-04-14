@@ -4,34 +4,20 @@ import {
   ListToolsRequestSchema,
   type CallToolResult,
 } from "@modelcontextprotocol/sdk/types.js";
+import type { DB } from "../db/index.js";
 import type { McpRegistry } from "./mcp-registry.js";
-import type {
-  PermissionChecker,
-  SessionContext,
-  ToolCallResult,
-  ToolDefinition,
-} from "./types.js";
-
-interface ResolvedTool {
-  definition: ToolDefinition;
-  mcpName: string;
-}
-
-async function resolveAllTools(registry: McpRegistry): Promise<ResolvedTool[]> {
-  const resolved: ResolvedTool[] = [];
-  for (const mcp of registry.listMcps()) {
-    const tools = await mcp.listTools();
-    for (const tool of tools) {
-      resolved.push({ definition: tool, mcpName: mcp.name });
-    }
-  }
-  return resolved;
-}
+import type { PermissionChecker, SessionContext } from "./types.js";
+import {
+  composeAllTools,
+  dispatchComposedCall,
+  resolveComposedTool,
+} from "./dispatch.js";
 
 export function createProxyMcpServer(
   ctx: SessionContext,
   registry: McpRegistry,
   permissionChecker: PermissionChecker,
+  db: DB,
 ): Server {
   const server = new Server(
     { name: "amdc-proxy-mcp", version: "0.1.0" },
@@ -39,42 +25,40 @@ export function createProxyMcpServer(
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    const resolved = await resolveAllTools(registry);
-    const filtered: typeof resolved = [];
-    for (const entry of resolved) {
-      const mcp = registry.findMcp(entry.mcpName);
-      if (!mcp) continue;
+    const entries = await composeAllTools(db, registry);
+    const tools: { name: string; description: string; inputSchema: unknown }[] =
+      [];
+    for (const entry of entries) {
       const decision = await permissionChecker.check(
         ctx,
-        mcp,
+        entry.mcp,
         entry.definition,
       );
-      if (decision.allowed) filtered.push(entry);
+      if (!decision.allowed) continue;
+      tools.push({
+        name: entry.definition.name,
+        description: entry.definition.description,
+        inputSchema: entry.definition.inputSchema,
+      });
     }
-    return {
-      tools: filtered.map(({ definition }) => ({
-        name: definition.name,
-        description: definition.description,
-        inputSchema: definition.inputSchema,
-      })),
-    };
+    return { tools };
   });
 
   async function handleCallTool(request: {
     params: { name: string; arguments?: Record<string, unknown> };
   }): Promise<CallToolResult> {
-    const toolName = request.params.name;
-    const resolved = await registry.resolveTool(toolName);
+    const wrapperName = request.params.name;
+    const resolved = await resolveComposedTool(db, registry, wrapperName);
     if (!resolved) {
       return {
-        content: [{ type: "text", text: "unknown tool: " + toolName }],
+        content: [{ type: "text", text: "unknown tool: " + wrapperName }],
         isError: true,
       };
     }
     const decision = await permissionChecker.check(
       ctx,
       resolved.mcp,
-      resolved.tool,
+      resolved.definition,
     );
     if (!decision.allowed) {
       const suffix = decision.reason ? ": " + decision.reason : "";
@@ -83,12 +67,13 @@ export function createProxyMcpServer(
         isError: true,
       };
     }
-    const result: ToolCallResult = await resolved.mcp.callTool(
-      toolName,
+    const result = await dispatchComposedCall(
+      db,
+      resolved,
       request.params.arguments ?? {},
       ctx,
     );
-    return result;
+    return result as unknown as CallToolResult;
   }
 
   server.setRequestHandler(CallToolRequestSchema, handleCallTool);

@@ -4,11 +4,13 @@ import { createProxyMcpServer } from "./proxy-server.js";
 import type { SessionRegistry } from "./session-registry.js";
 import type { McpRegistry } from "./mcp-registry.js";
 import type { PermissionChecker } from "./types.js";
+import type { DB } from "../db/index.js";
 
 export interface McpRouterDeps {
   sessionRegistry: SessionRegistry;
   mcpRegistry: McpRegistry;
   permissionChecker: PermissionChecker;
+  db: DB;
 }
 
 export function createMcpRouter(deps: McpRouterDeps): ExpressRouter {
@@ -24,6 +26,7 @@ export function createMcpRouter(deps: McpRouterDeps): ExpressRouter {
       ctx,
       deps.mcpRegistry,
       deps.permissionChecker,
+      deps.db,
     );
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,

@@ -57,6 +57,7 @@ export function createApp(deps: AppDeps): Express {
         sessionRegistry: deps.sessionRegistry,
         mcpRegistry: deps.mcpRegistry,
         permissionChecker: deps.permissionChecker,
+        db: deps.db,
       }),
     );
   }

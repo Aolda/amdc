@@ -124,6 +124,16 @@ function projectBaseline(
   return out;
 }
 
+function findBaselineByUnderlying(
+  baseline: ToolDefinition[],
+  underlying: string,
+): ToolDefinition | null {
+  const direct = baseline.find((b) => b.name === underlying);
+  if (direct) return direct;
+  const suffix = "__" + underlying;
+  return baseline.find((b) => b.name.endsWith(suffix)) ?? null;
+}
+
 function projectExtras(
   baseline: ToolDefinition[],
   extras: WrapperRow[],
@@ -133,7 +143,7 @@ function projectExtras(
     if (row.hidden) continue;
     const underlyingBaseline =
       row.underlyingToolName !== null
-        ? (baseline.find((b) => b.name === row.underlyingToolName) ?? null)
+        ? findBaselineByUnderlying(baseline, row.underlyingToolName)
         : null;
     out.push(overlayMetadata(row, underlyingBaseline));
   }
