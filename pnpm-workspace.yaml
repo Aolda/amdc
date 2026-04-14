@@ -1,0 +1,7 @@
+packages:
+  - "server"
+  - "frontend"
+onlyBuiltDependencies:
+  - "esbuild"
+  - "sharp"
+  - "better-sqlite3"

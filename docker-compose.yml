@@ -1,0 +1,38 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+      target: base
+    command: pnpm --filter @amdc/server dev
+    ports:
+      - "${SERVER_PORT:-3001}:${SERVER_PORT:-3001}"
+    environment:
+      - NODE_ENV=development
+      - PORT=${SERVER_PORT:-3001}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./server/src:/app/server/src
+      - ./server/drizzle:/app/server/drizzle
+      - amdc-data:/app/server/data
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      target: base
+    command: pnpm --filter @amdc/frontend dev
+    ports:
+      - "${FRONTEND_PORT:-3000}:${FRONTEND_PORT:-3000}"
+    environment:
+      - NODE_ENV=development
+      - PORT=${FRONTEND_PORT:-3000}
+      - API_URL=http://server:${SERVER_PORT:-3001}
+    volumes:
+      - ./frontend/src:/app/frontend/src
+    depends_on:
+      - server
+
+volumes:
+  amdc-data:

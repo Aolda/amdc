@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1775982209595,
+      "tag": "0000_tidy_baron_zemo",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1775983693242,
+      "tag": "0001_awesome_dragon_lord",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1776128503539,
+      "tag": "0002_sturdy_celestials",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1776129111708,
+      "tag": "0003_concerned_shotgun",
+      "breakpoints": true
+    }
+  ]
+}

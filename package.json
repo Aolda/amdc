@@ -1,0 +1,35 @@
+{
+  "name": "amdc",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @amdc/server --filter @amdc/frontend dev",
+    "build": "pnpm --filter @amdc/server build && pnpm --filter @amdc/frontend build",
+    "lint": "pnpm --parallel --filter server --filter frontend lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm --parallel --filter server --filter frontend test",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "@eslint/js": "^9.0.0",
+    "typescript-eslint": "^8.0.0",
+    "eslint-plugin-sonarjs": "^3.0.0",
+    "prettier": "^3.4.0",
+    "husky": "^9.1.0",
+    "lint-staged": "^15.2.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,yaml,yml,md,css}": [
+      "prettier --write"
+    ]
+  }
+}
