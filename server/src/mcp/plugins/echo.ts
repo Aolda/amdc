@@ -1,6 +1,6 @@
-import type { NativePluginMeta } from "../types.js";
+import type { NativeMcpMeta } from "../types.js";
 
-export const echoMeta: NativePluginMeta = {
+export const echoMeta: NativeMcpMeta = {
   name: "echo",
   kind: "native",
   description: "Returns the input message; used for proxy_mcp smoke testing.",

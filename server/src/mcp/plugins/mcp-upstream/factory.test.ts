@@ -6,11 +6,8 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import {
-  buildUpstreamPlugin,
-  type UpstreamTransportFactory,
-} from "./factory.js";
-import type { SessionContext, UpstreamPluginMeta } from "../../types.js";
+import { buildUpstreamMcp, type UpstreamTransportFactory } from "./factory.js";
+import type { SessionContext, UpstreamMcpMeta } from "../../types.js";
 
 const ctx: SessionContext = {
   token: "t",
@@ -61,21 +58,21 @@ async function buildMockUpstream(
   };
 }
 
-const meta: UpstreamPluginMeta = {
+const meta: UpstreamMcpMeta = {
   name: "upstream",
-  kind: "mcp-upstream",
+  kind: "upstream",
   description: "mock upstream",
   defaultLevel: 3,
   upstreamUrl: "http://ignored",
 };
 
-describe("buildUpstreamPlugin", () => {
-  it("namespaces upstream tools with plugin name prefix", async () => {
+describe("buildUpstreamMcp", () => {
+  it("namespaces upstream tools with mcp name prefix", async () => {
     const factory = await buildMockUpstream({
       tools: [{ name: "ping" }, { name: "status" }],
     });
-    const plugin = buildUpstreamPlugin(meta, factory);
-    const tools = await plugin.listTools();
+    const mcp = buildUpstreamMcp(meta, factory);
+    const tools = await mcp.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "upstream__ping",
       "upstream__status",
@@ -93,9 +90,9 @@ describe("buildUpstreamPlugin", () => {
         return { pong: true };
       },
     });
-    const plugin = buildUpstreamPlugin(meta, factory);
-    await plugin.listTools();
-    const result = await plugin.callTool("upstream__ping", { x: 1 }, ctx);
+    const mcp = buildUpstreamMcp(meta, factory);
+    await mcp.listTools();
+    const result = await mcp.callTool("upstream__ping", { x: 1 }, ctx);
     expect(receivedName).toBe("ping");
     expect(receivedArgs).toEqual({ x: 1 });
     expect(result.isError).toBeFalsy();
@@ -125,10 +122,10 @@ describe("buildUpstreamPlugin", () => {
         },
       };
     };
-    const plugin = buildUpstreamPlugin(meta, factory);
-    await plugin.listTools();
-    await plugin.listTools();
-    await plugin.listTools();
+    const mcp = buildUpstreamMcp(meta, factory);
+    await mcp.listTools();
+    await mcp.listTools();
+    await mcp.listTools();
     expect(listCount).toBe(1);
   });
 
@@ -139,8 +136,8 @@ describe("buildUpstreamPlugin", () => {
         throw new Error("connection refused");
       },
     });
-    const plugin = buildUpstreamPlugin(meta, factory);
-    const tools = await plugin.listTools();
+    const mcp = buildUpstreamMcp(meta, factory);
+    const tools = await mcp.listTools();
     expect(tools).toEqual([]);
   });
 });

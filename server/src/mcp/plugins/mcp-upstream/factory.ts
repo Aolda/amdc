@@ -1,21 +1,21 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type {
-  Plugin,
+  Mcp,
   SessionContext,
   ToolCallResult,
   ToolDefinition,
-  UpstreamPluginMeta,
+  UpstreamMcpMeta,
 } from "../../types.js";
 
 export const UPSTREAM_NAME_SEPARATOR = "__";
 
-function namespaceTool(pluginName: string, toolName: string): string {
-  return `${pluginName}${UPSTREAM_NAME_SEPARATOR}${toolName}`;
+function namespaceTool(mcpName: string, toolName: string): string {
+  return `${mcpName}${UPSTREAM_NAME_SEPARATOR}${toolName}`;
 }
 
-function stripNamespace(pluginName: string, fullToolName: string): string {
-  const prefix = pluginName + UPSTREAM_NAME_SEPARATOR;
+function stripNamespace(mcpName: string, fullToolName: string): string {
+  const prefix = mcpName + UPSTREAM_NAME_SEPARATOR;
   if (!fullToolName.startsWith(prefix)) return fullToolName;
   return fullToolName.slice(prefix.length);
 }
@@ -40,10 +40,10 @@ export const defaultUpstreamTransportFactory: UpstreamTransportFactory = (
   };
 };
 
-export function buildUpstreamPlugin(
-  meta: UpstreamPluginMeta,
+export function buildUpstreamMcp(
+  meta: UpstreamMcpMeta,
   transportFactory: UpstreamTransportFactory = defaultUpstreamTransportFactory,
-): Plugin {
+): Mcp {
   let clientPromise: Promise<Client> | null = null;
   let cachedTools: ToolDefinition[] | null = null;
 
@@ -60,7 +60,7 @@ export function buildUpstreamPlugin(
 
   return {
     name: meta.name,
-    kind: "mcp-upstream",
+    kind: "upstream",
     description: meta.description,
     defaultLevel: meta.defaultLevel,
     async listTools(): Promise<ToolDefinition[]> {

@@ -5,13 +5,15 @@ import {
   agents,
   agentSkills,
   agentSubAgents,
-  agentPlugins,
+  agentMcps,
+  agentMcpTools,
 } from "../db/schema.js";
 import type { MarkdownStore } from "../storage/markdown.js";
 import type {
-  AgentPluginLink,
+  AgentMcpLink,
   AgentRow,
   CreateAgentInput,
+  ToolLevel,
   UpdateAgentInput,
 } from "./types.js";
 
@@ -28,18 +30,28 @@ async function toRow(
     .select()
     .from(agentSubAgents)
     .where(eq(agentSubAgents.agentId, raw.id));
-  const pluginLinks = await db
+  const mcpLinks = await db
     .select()
-    .from(agentPlugins)
-    .where(eq(agentPlugins.agentId, raw.id));
+    .from(agentMcps)
+    .where(eq(agentMcps.agentId, raw.id));
+  const toolOverrideRows = await db
+    .select()
+    .from(agentMcpTools)
+    .where(eq(agentMcpTools.agentId, raw.id));
   return {
     ...raw,
     body: await store.read(raw.name),
     skillIds: skillLinks.map((link) => link.skillId),
     subAgentIds: subAgentLinks.map((link) => link.subAgentId),
-    plugins: pluginLinks.map((link) => ({
-      name: link.pluginName,
-      levelOverride: (link.levelOverride as 1 | 2 | 3 | null) ?? null,
+    mcps: mcpLinks.map((link) => ({
+      name: link.mcpName,
+      levelOverride: (link.levelOverride as ToolLevel | null) ?? null,
+      toolOverrides: toolOverrideRows
+        .filter((row) => row.mcpName === link.mcpName)
+        .map((row) => ({
+          toolName: row.toolName,
+          level: row.levelOverride as ToolLevel,
+        })),
     })),
   };
 }
@@ -68,20 +80,32 @@ async function setSubAgentLinks(
     .values(subAgentIds.map((subAgentId) => ({ agentId, subAgentId })));
 }
 
-async function setPluginLinks(
+async function setMcpLinks(
   db: DB,
   agentId: string,
-  links: AgentPluginLink[],
+  links: AgentMcpLink[],
 ): Promise<void> {
-  await db.delete(agentPlugins).where(eq(agentPlugins.agentId, agentId));
+  await db.delete(agentMcpTools).where(eq(agentMcpTools.agentId, agentId));
+  await db.delete(agentMcps).where(eq(agentMcps.agentId, agentId));
   if (links.length === 0) return;
-  await db.insert(agentPlugins).values(
+  await db.insert(agentMcps).values(
     links.map((link) => ({
       agentId,
-      pluginName: link.name,
+      mcpName: link.name,
       levelOverride: link.levelOverride,
     })),
   );
+  const toolRows = links.flatMap((link) =>
+    (link.toolOverrides ?? []).map((override) => ({
+      agentId,
+      mcpName: link.name,
+      toolName: override.toolName,
+      levelOverride: override.level,
+    })),
+  );
+  if (toolRows.length > 0) {
+    await db.insert(agentMcpTools).values(toolRows);
+  }
 }
 
 export async function createAgent(
@@ -106,8 +130,8 @@ export async function createAgent(
   if (input.subAgentIds && input.subAgentIds.length > 0) {
     await setSubAgentLinks(db, id, input.subAgentIds);
   }
-  if (input.plugins && input.plugins.length > 0) {
-    await setPluginLinks(db, id, input.plugins);
+  if (input.mcps && input.mcps.length > 0) {
+    await setMcpLinks(db, id, input.mcps);
   }
 
   const created = await findAgentById(db, store, id);
@@ -167,8 +191,8 @@ export async function updateAgent(
   if (input.subAgentIds !== undefined) {
     await setSubAgentLinks(db, id, input.subAgentIds);
   }
-  if (input.plugins !== undefined) {
-    await setPluginLinks(db, id, input.plugins);
+  if (input.mcps !== undefined) {
+    await setMcpLinks(db, id, input.mcps);
   }
 
   return findAgentById(db, store, id);

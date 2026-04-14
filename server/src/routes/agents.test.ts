@@ -7,7 +7,7 @@ import { createApp } from "../app.js";
 import { createDatabase, type DB } from "../db/index.js";
 import { createMarkdownStore } from "../storage/markdown.js";
 import { createSkill } from "../skills/repository.js";
-import { syncPluginsToDb } from "../mcp/plugin-sync.js";
+import { syncMcpsToDb } from "../mcp/mcp-sync.js";
 import { echoMeta } from "../mcp/plugins/echo.js";
 import type { Express } from "express";
 
@@ -22,7 +22,7 @@ beforeEach(async () => {
   agentDir = mkdtempSync(join(tmpdir(), "amdc-agents-route-"));
   skillDir = mkdtempSync(join(tmpdir(), "amdc-skills-route-"));
   skillStore = createMarkdownStore(skillDir);
-  await syncPluginsToDb(db, [echoMeta]);
+  await syncMcpsToDb(db, [echoMeta]);
   app = createApp({
     db,
     agentStore: createMarkdownStore(agentDir),
@@ -126,32 +126,55 @@ describe("PUT /api/agents/:id", () => {
   });
 });
 
-describe("agent plugin links", () => {
-  it("creates an agent with plugin links and returns them", async () => {
+describe("agent mcp links", () => {
+  it("creates an agent with mcp links and returns them", async () => {
     const res = await request(app)
       .post("/api/agents")
       .send({
         ...validBody,
-        plugins: [{ name: "echo", levelOverride: 2 }],
+        mcps: [{ name: "echo", levelOverride: 2, toolOverrides: [] }],
       });
     expect(res.status).toBe(201);
-    expect(res.body.data.plugins).toEqual([{ name: "echo", levelOverride: 2 }]);
-  });
-
-  it("updates an agent's plugin links via PUT", async () => {
-    const created = await request(app).post("/api/agents").send(validBody);
-    const res = await request(app)
-      .put(`/api/agents/${created.body.data.id}`)
-      .send({ plugins: [{ name: "echo", levelOverride: null }] });
-    expect(res.status).toBe(200);
-    expect(res.body.data.plugins).toEqual([
-      { name: "echo", levelOverride: null },
+    expect(res.body.data.mcps).toEqual([
+      { name: "echo", levelOverride: 2, toolOverrides: [] },
     ]);
   });
 
-  it("returns empty plugins array when none provided", async () => {
+  it("updates an agent's mcp links via PUT", async () => {
+    const created = await request(app).post("/api/agents").send(validBody);
+    const res = await request(app)
+      .put(`/api/agents/${created.body.data.id}`)
+      .send({
+        mcps: [{ name: "echo", levelOverride: null, toolOverrides: [] }],
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.data.mcps).toEqual([
+      { name: "echo", levelOverride: null, toolOverrides: [] },
+    ]);
+  });
+
+  it("persists per-tool override on the agent record", async () => {
+    const res = await request(app)
+      .post("/api/agents")
+      .send({
+        ...validBody,
+        mcps: [
+          {
+            name: "echo",
+            levelOverride: null,
+            toolOverrides: [{ toolName: "echo", level: 1 }],
+          },
+        ],
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.data.mcps[0].toolOverrides).toEqual([
+      { toolName: "echo", level: 1 },
+    ]);
+  });
+
+  it("returns empty mcps array when none provided", async () => {
     const res = await request(app).post("/api/agents").send(validBody);
-    expect(res.body.data.plugins).toEqual([]);
+    expect(res.body.data.mcps).toEqual([]);
   });
 });
 

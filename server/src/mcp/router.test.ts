@@ -6,10 +6,7 @@ import {
   createSessionRegistry,
   type SessionRegistry,
 } from "./session-registry.js";
-import {
-  createPluginRegistry,
-  type PluginRegistry,
-} from "./plugin-registry.js";
+import { createMcpRegistry, type McpRegistry } from "./mcp-registry.js";
 import { AllowAllPermissionChecker } from "./permission.js";
 import { echoMeta } from "./plugins/echo.js";
 import type { Express } from "express";
@@ -17,16 +14,16 @@ import type { Express } from "express";
 let app: Express;
 let db: DB;
 let sessionRegistry: SessionRegistry;
-let pluginRegistry: PluginRegistry;
+let mcpRegistry: McpRegistry;
 
 beforeEach(async () => {
   db = await createDatabase(":memory:");
   sessionRegistry = createSessionRegistry();
-  pluginRegistry = createPluginRegistry([echoMeta]);
+  mcpRegistry = createMcpRegistry([echoMeta]);
   app = createApp({
     db,
     sessionRegistry,
-    pluginRegistry,
+    mcpRegistry,
     permissionChecker: new AllowAllPermissionChecker(),
   });
 });

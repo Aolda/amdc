@@ -1,6 +1,14 @@
-export interface AgentPluginLink {
+export type ToolLevel = 1 | 2 | 3;
+
+export interface AgentMcpToolOverride {
+  toolName: string;
+  level: ToolLevel;
+}
+
+export interface AgentMcpLink {
   name: string;
-  levelOverride: 1 | 2 | 3 | null;
+  levelOverride: ToolLevel | null;
+  toolOverrides: AgentMcpToolOverride[];
 }
 
 export interface AgentRow {
@@ -10,7 +18,7 @@ export interface AgentRow {
   body: string;
   skillIds: string[];
   subAgentIds: string[];
-  plugins: AgentPluginLink[];
+  mcps: AgentMcpLink[];
   createdAt: string;
   updatedAt: string;
 }
@@ -21,7 +29,7 @@ export interface CreateAgentInput {
   body: string;
   skillIds?: string[];
   subAgentIds?: string[];
-  plugins?: AgentPluginLink[];
+  mcps?: AgentMcpLink[];
 }
 
 export interface UpdateAgentInput {
@@ -30,5 +38,5 @@ export interface UpdateAgentInput {
   body?: string;
   skillIds?: string[];
   subAgentIds?: string[];
-  plugins?: AgentPluginLink[];
+  mcps?: AgentMcpLink[];
 }

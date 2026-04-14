@@ -3,9 +3,9 @@ import { createApp } from "./app.js";
 import { createDatabase } from "./db/index.js";
 import { createMarkdownStore } from "./storage/markdown.js";
 import { createSessionRegistry } from "./mcp/session-registry.js";
-import { createPluginRegistry } from "./mcp/plugin-registry.js";
+import { createMcpRegistry } from "./mcp/mcp-registry.js";
 import { AgentDefaultPermissionChecker } from "./mcp/permission.js";
-import { syncPluginsToDb } from "./mcp/plugin-sync.js";
+import { loadUpstreamMcpsFromDb, syncMcpsToDb } from "./mcp/mcp-sync.js";
 import { echoMeta } from "./mcp/plugins/echo.js";
 import { findAgentById, findAllAgents } from "./agents/repository.js";
 
@@ -19,14 +19,18 @@ async function main() {
   const agentStore = createMarkdownStore(AGENTS_DIR);
   const skillStore = createMarkdownStore(SKILLS_DIR);
 
-  const pluginMetas = [echoMeta];
-  await syncPluginsToDb(db, pluginMetas);
-  const pluginRegistry = createPluginRegistry(pluginMetas);
+  const nativeMcpMetas = [echoMeta];
+  await syncMcpsToDb(db, nativeMcpMetas);
+  const upstreamMcpMetas = await loadUpstreamMcpsFromDb(db);
+  const mcpRegistry = createMcpRegistry([
+    ...nativeMcpMetas,
+    ...upstreamMcpMetas,
+  ]);
   const sessionRegistry = createSessionRegistry();
   const permissionChecker = new AgentDefaultPermissionChecker({
     getAgent: async (agentId) => {
       const row = await findAgentById(db, agentStore, agentId);
-      return row ? { id: row.id, plugins: row.plugins } : null;
+      return row ? { id: row.id, mcps: row.mcps } : null;
     },
   });
 
@@ -49,7 +53,7 @@ async function main() {
     agentStore,
     skillStore,
     sessionRegistry,
-    pluginRegistry,
+    mcpRegistry,
     permissionChecker,
   });
 

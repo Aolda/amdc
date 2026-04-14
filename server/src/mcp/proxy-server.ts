@@ -4,7 +4,7 @@ import {
   ListToolsRequestSchema,
   type CallToolResult,
 } from "@modelcontextprotocol/sdk/types.js";
-import type { PluginRegistry } from "./plugin-registry.js";
+import type { McpRegistry } from "./mcp-registry.js";
 import type {
   PermissionChecker,
   SessionContext,
@@ -14,17 +14,15 @@ import type {
 
 interface ResolvedTool {
   definition: ToolDefinition;
-  pluginName: string;
+  mcpName: string;
 }
 
-async function resolveAllTools(
-  registry: PluginRegistry,
-): Promise<ResolvedTool[]> {
+async function resolveAllTools(registry: McpRegistry): Promise<ResolvedTool[]> {
   const resolved: ResolvedTool[] = [];
-  for (const plugin of registry.listPlugins()) {
-    const tools = await plugin.listTools();
+  for (const mcp of registry.listMcps()) {
+    const tools = await mcp.listTools();
     for (const tool of tools) {
-      resolved.push({ definition: tool, pluginName: plugin.name });
+      resolved.push({ definition: tool, mcpName: mcp.name });
     }
   }
   return resolved;
@@ -32,7 +30,7 @@ async function resolveAllTools(
 
 export function createProxyMcpServer(
   ctx: SessionContext,
-  registry: PluginRegistry,
+  registry: McpRegistry,
   permissionChecker: PermissionChecker,
 ): Server {
   const server = new Server(
@@ -44,12 +42,12 @@ export function createProxyMcpServer(
     const resolved = await resolveAllTools(registry);
     const filtered: typeof resolved = [];
     for (const entry of resolved) {
-      const plugin = registry.findPlugin(entry.pluginName);
-      if (!plugin) continue;
+      const mcp = registry.findMcp(entry.mcpName);
+      if (!mcp) continue;
       const decision = await permissionChecker.check(
         ctx,
-        plugin,
-        entry.definition.name,
+        mcp,
+        entry.definition,
       );
       if (decision.allowed) filtered.push(entry);
     }
@@ -66,14 +64,18 @@ export function createProxyMcpServer(
     params: { name: string; arguments?: Record<string, unknown> };
   }): Promise<CallToolResult> {
     const toolName = request.params.name;
-    const plugin = await registry.findPluginForTool(toolName);
-    if (!plugin) {
+    const resolved = await registry.resolveTool(toolName);
+    if (!resolved) {
       return {
         content: [{ type: "text", text: "unknown tool: " + toolName }],
         isError: true,
       };
     }
-    const decision = await permissionChecker.check(ctx, plugin, toolName);
+    const decision = await permissionChecker.check(
+      ctx,
+      resolved.mcp,
+      resolved.tool,
+    );
     if (!decision.allowed) {
       const suffix = decision.reason ? ": " + decision.reason : "";
       return {
@@ -81,7 +83,7 @@ export function createProxyMcpServer(
         isError: true,
       };
     }
-    const result: ToolCallResult = await plugin.callTool(
+    const result: ToolCallResult = await resolved.mcp.callTool(
       toolName,
       request.params.arguments ?? {},
       ctx,

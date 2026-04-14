@@ -27,8 +27,7 @@ export function createAgentsRouter(db: DB, store: MarkdownStore): Router {
   });
 
   router.post("/", async (req, res) => {
-    const { name, description, body, skillIds, subAgentIds, plugins } =
-      req.body;
+    const { name, description, body, skillIds, subAgentIds, mcps } = req.body;
     if (!name || body === undefined) {
       res.status(400).json({
         error: { message: "name and body are required" },
@@ -41,7 +40,7 @@ export function createAgentsRouter(db: DB, store: MarkdownStore): Router {
       body,
       skillIds,
       subAgentIds,
-      plugins,
+      mcps,
     });
     res.status(201).json({ data: agent });
   });

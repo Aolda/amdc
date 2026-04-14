@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createDatabase, type DB } from "../db/index.js";
-import { plugins } from "../db/schema.js";
-import { syncPluginsToDb } from "./plugin-sync.js";
+import { mcps } from "../db/schema.js";
+import { syncMcpsToDb } from "./mcp-sync.js";
 import { echoMeta } from "./plugins/echo.js";
 
 let db: DB;
@@ -10,10 +10,10 @@ beforeEach(async () => {
   db = await createDatabase(":memory:");
 });
 
-describe("syncPluginsToDb", () => {
-  it("inserts a plugin row on first sync", async () => {
-    await syncPluginsToDb(db, [echoMeta]);
-    const rows = await db.select().from(plugins);
+describe("syncMcpsToDb", () => {
+  it("inserts an mcp row on first sync", async () => {
+    await syncMcpsToDb(db, [echoMeta]);
+    const rows = await db.select().from(mcps);
     expect(rows).toHaveLength(1);
     expect(rows[0].name).toBe("echo");
     expect(rows[0].kind).toBe("native");
@@ -21,9 +21,9 @@ describe("syncPluginsToDb", () => {
   });
 
   it("updates existing row on second sync without duplicating", async () => {
-    await syncPluginsToDb(db, [echoMeta]);
-    await syncPluginsToDb(db, [echoMeta]);
-    const rows = await db.select().from(plugins);
+    await syncMcpsToDb(db, [echoMeta]);
+    await syncMcpsToDb(db, [echoMeta]);
+    const rows = await db.select().from(mcps);
     expect(rows).toHaveLength(1);
   });
 });

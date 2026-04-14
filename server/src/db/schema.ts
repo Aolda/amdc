@@ -63,7 +63,7 @@ export const agentSkills = sqliteTable(
   }),
 );
 
-export const plugins = sqliteTable("plugins", {
+export const mcps = sqliteTable("mcps", {
   name: text("name").primaryKey(),
   kind: text("kind").notNull(),
   description: text("description").notNull().default(""),
@@ -88,18 +88,37 @@ export const agentSubAgents = sqliteTable(
   }),
 );
 
-export const agentPlugins = sqliteTable(
-  "agent_plugins",
+export const agentMcps = sqliteTable(
+  "agent_mcps",
   {
     agentId: text("agent_id")
       .notNull()
       .references(() => agents.id, { onDelete: "cascade" }),
-    pluginName: text("plugin_name")
+    mcpName: text("mcp_name")
       .notNull()
-      .references(() => plugins.name, { onDelete: "cascade" }),
+      .references(() => mcps.name, { onDelete: "cascade" }),
     levelOverride: integer("level_override"),
   },
   (table) => ({
-    pk: primaryKey({ columns: [table.agentId, table.pluginName] }),
+    pk: primaryKey({ columns: [table.agentId, table.mcpName] }),
+  }),
+);
+
+export const agentMcpTools = sqliteTable(
+  "agent_mcp_tools",
+  {
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    mcpName: text("mcp_name")
+      .notNull()
+      .references(() => mcps.name, { onDelete: "cascade" }),
+    toolName: text("tool_name").notNull(),
+    levelOverride: integer("level_override").notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({
+      columns: [table.agentId, table.mcpName, table.toolName],
+    }),
   }),
 );

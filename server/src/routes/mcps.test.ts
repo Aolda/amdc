@@ -1,0 +1,139 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import request from "supertest";
+import { createApp } from "../app.js";
+import { createDatabase, type DB } from "../db/index.js";
+import { syncMcpsToDb } from "../mcp/mcp-sync.js";
+import { createMcpRegistry } from "../mcp/mcp-registry.js";
+import { echoMeta } from "../mcp/plugins/echo.js";
+import type { Express } from "express";
+
+let app: Express;
+let db: DB;
+
+beforeEach(async () => {
+  db = await createDatabase(":memory:");
+  await syncMcpsToDb(db, [echoMeta]);
+  const mcpRegistry = createMcpRegistry([echoMeta]);
+  app = createApp({ db, mcpRegistry });
+});
+
+describe("GET /api/mcps", () => {
+  it("lists all mcps with meta fields", async () => {
+    const res = await request(app).get("/api/mcps");
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0]).toMatchObject({
+      name: "echo",
+      kind: "native",
+      defaultLevel: 3,
+    });
+  });
+
+  it("returns empty array when no mcps seeded", async () => {
+    const emptyDb = await createDatabase(":memory:");
+    const emptyApp = createApp({
+      db: emptyDb,
+      mcpRegistry: createMcpRegistry([]),
+    });
+    const res = await request(emptyApp).get("/api/mcps");
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([]);
+  });
+});
+
+describe("GET /api/mcps/:name/tools", () => {
+  it("lists tool definitions for a registered mcp", async () => {
+    const res = await request(app).get("/api/mcps/echo/tools");
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0]).toMatchObject({
+      name: "echo",
+      level: 3,
+    });
+  });
+
+  it("returns 404 for unknown mcp", async () => {
+    const res = await request(app).get("/api/mcps/unknown/tools");
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /api/mcps", () => {
+  it("creates a new upstream mcp", async () => {
+    const res = await request(app).post("/api/mcps").send({
+      name: "grafana",
+      description: "Grafana MCP",
+      defaultLevel: 2,
+      upstreamUrl: "http://example.invalid/mcp",
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.data).toMatchObject({
+      name: "grafana",
+      kind: "upstream",
+      defaultLevel: 2,
+      upstreamUrl: "http://example.invalid/mcp",
+    });
+  });
+
+  it("returns 400 when required fields missing", async () => {
+    const res = await request(app)
+      .post("/api/mcps")
+      .send({ name: "incomplete" });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 409 on duplicate name", async () => {
+    await request(app).post("/api/mcps").send({
+      name: "dup",
+      defaultLevel: 3,
+      upstreamUrl: "http://x",
+    });
+    const res = await request(app).post("/api/mcps").send({
+      name: "dup",
+      defaultLevel: 3,
+      upstreamUrl: "http://x",
+    });
+    expect(res.status).toBe(409);
+  });
+});
+
+describe("PUT /api/mcps/:name", () => {
+  it("updates an upstream mcp", async () => {
+    await request(app).post("/api/mcps").send({
+      name: "u1",
+      defaultLevel: 3,
+      upstreamUrl: "http://a",
+    });
+    const res = await request(app).put("/api/mcps/u1").send({
+      defaultLevel: 1,
+      upstreamUrl: "http://b",
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.data.defaultLevel).toBe(1);
+    expect(res.body.data.upstreamUrl).toBe("http://b");
+  });
+
+  it("rejects native mcp with 403", async () => {
+    const res = await request(app).put("/api/mcps/echo").send({
+      defaultLevel: 1,
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("DELETE /api/mcps/:name", () => {
+  it("deletes an upstream mcp", async () => {
+    await request(app).post("/api/mcps").send({
+      name: "u2",
+      defaultLevel: 3,
+      upstreamUrl: "http://x",
+    });
+    const res = await request(app).delete("/api/mcps/u2");
+    expect(res.status).toBe(204);
+  });
+
+  it("rejects native mcp delete with 403", async () => {
+    const res = await request(app).delete("/api/mcps/echo");
+    expect(res.status).toBe(403);
+  });
+});

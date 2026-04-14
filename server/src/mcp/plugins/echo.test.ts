@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { echoMeta } from "./echo.js";
 
-describe("echo plugin", () => {
+describe("echo mcp", () => {
   it("exposes echo tool meta", () => {
     expect(echoMeta.name).toBe("echo");
     expect(echoMeta.defaultLevel).toBe(3);

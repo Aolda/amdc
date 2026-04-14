@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createDatabase, type DB } from "../db/index.js";
 import { createMarkdownStore } from "../storage/markdown.js";
 import { createSkill } from "../skills/repository.js";
-import { syncPluginsToDb } from "../mcp/plugin-sync.js";
+import { syncMcpsToDb } from "../mcp/mcp-sync.js";
 import { echoMeta } from "../mcp/plugins/echo.js";
 import {
   createAgent,
@@ -28,7 +28,7 @@ describe("agents repository", () => {
     skillDir = mkdtempSync(join(tmpdir(), "amdc-skills-"));
     agentStore = createMarkdownStore(agentDir);
     skillStore = createMarkdownStore(skillDir);
-    await syncPluginsToDb(db, [echoMeta]);
+    await syncMcpsToDb(db, [echoMeta]);
   });
 
   afterEach(() => {
@@ -139,37 +139,62 @@ describe("agents repository", () => {
     expect(updated?.subAgentIds).toEqual([sub2.id]);
   });
 
-  it("creates an agent with plugin links", async () => {
+  it("creates an agent with mcp links", async () => {
     const agent = await createAgent(db, agentStore, {
       name: "ops",
       body: "# ops",
-      plugins: [{ name: "echo", levelOverride: null }],
+      mcps: [{ name: "echo", levelOverride: null, toolOverrides: [] }],
     });
-    expect(agent.plugins).toEqual([{ name: "echo", levelOverride: null }]);
+    expect(agent.mcps).toEqual([
+      { name: "echo", levelOverride: null, toolOverrides: [] },
+    ]);
   });
 
-  it("updates plugin links replacing previous set with override", async () => {
+  it("updates mcp links replacing previous set with override", async () => {
     const agent = await createAgent(db, agentStore, {
       name: "ops",
       body: "x",
-      plugins: [{ name: "echo", levelOverride: null }],
+      mcps: [{ name: "echo", levelOverride: null, toolOverrides: [] }],
     });
     const updated = await updateAgent(db, agentStore, agent.id, {
-      plugins: [{ name: "echo", levelOverride: 2 }],
+      mcps: [{ name: "echo", levelOverride: 2, toolOverrides: [] }],
     });
-    expect(updated?.plugins).toEqual([{ name: "echo", levelOverride: 2 }]);
+    expect(updated?.mcps).toEqual([
+      { name: "echo", levelOverride: 2, toolOverrides: [] },
+    ]);
   });
 
-  it("clears plugin links when empty array passed", async () => {
+  it("persists tool-level overrides", async () => {
     const agent = await createAgent(db, agentStore, {
       name: "ops",
       body: "x",
-      plugins: [{ name: "echo", levelOverride: null }],
+      mcps: [
+        {
+          name: "echo",
+          levelOverride: null,
+          toolOverrides: [{ toolName: "echo", level: 1 }],
+        },
+      ],
+    });
+    expect(agent.mcps).toEqual([
+      {
+        name: "echo",
+        levelOverride: null,
+        toolOverrides: [{ toolName: "echo", level: 1 }],
+      },
+    ]);
+  });
+
+  it("clears mcp links when empty array passed", async () => {
+    const agent = await createAgent(db, agentStore, {
+      name: "ops",
+      body: "x",
+      mcps: [{ name: "echo", levelOverride: null, toolOverrides: [] }],
     });
     const updated = await updateAgent(db, agentStore, agent.id, {
-      plugins: [],
+      mcps: [],
     });
-    expect(updated?.plugins).toEqual([]);
+    expect(updated?.mcps).toEqual([]);
   });
 
   it("deletes agent and removes file", async () => {

@@ -6,8 +6,10 @@ import {
 import type {
   AgentLike,
   AllowListProvider,
-  Plugin,
+  Mcp,
   SessionContext,
+  ToolDefinition,
+  ToolLevel,
 } from "./types.js";
 
 const ctx: SessionContext = {
@@ -16,7 +18,7 @@ const ctx: SessionContext = {
   agentId: "agent-1",
 };
 
-function makePlugin(name: string, defaultLevel: 1 | 2 | 3): Plugin {
+function makeMcp(name: string, defaultLevel: ToolLevel): Mcp {
   return {
     name,
     kind: "native",
@@ -27,10 +29,23 @@ function makePlugin(name: string, defaultLevel: 1 | 2 | 3): Plugin {
   };
 }
 
+function makeTool(name: string, level: ToolLevel): ToolDefinition {
+  return {
+    name,
+    description: "",
+    inputSchema: { type: "object" },
+    level,
+  };
+}
+
 describe("AllowAllPermissionChecker", () => {
   it("allows everything", async () => {
     const c = new AllowAllPermissionChecker();
-    const decision = await c.check(ctx, makePlugin("echo", 1), "echo");
+    const decision = await c.check(
+      ctx,
+      makeMcp("echo", 1),
+      makeTool("echo", 1),
+    );
     expect(decision.allowed).toBe(true);
   });
 });
@@ -45,65 +60,130 @@ describe("AgentDefaultPermissionChecker", () => {
 
   it("denies when agent not found", async () => {
     const c = makeChecker(null);
-    const decision = await c.check(ctx, makePlugin("echo", 3), "echo");
+    const decision = await c.check(
+      ctx,
+      makeMcp("echo", 3),
+      makeTool("echo", 3),
+    );
     expect(decision.allowed).toBe(false);
   });
 
-  it("denies when plugin not in agent's allow list", async () => {
-    const c = makeChecker({ id: "agent-1", plugins: [] });
-    const decision = await c.check(ctx, makePlugin("echo", 3), "echo");
+  it("denies when mcp not in agent's allow list", async () => {
+    const c = makeChecker({ id: "agent-1", mcps: [] });
+    const decision = await c.check(
+      ctx,
+      makeMcp("echo", 3),
+      makeTool("echo", 3),
+    );
     expect(decision.allowed).toBe(false);
   });
 
-  it("allows when plugin level 3 is selected", async () => {
+  it("allows when tool default level is 3", async () => {
     const c = makeChecker({
       id: "agent-1",
-      plugins: [{ name: "echo", levelOverride: null }],
+      mcps: [{ name: "echo", levelOverride: null, toolOverrides: [] }],
     });
-    const decision = await c.check(ctx, makePlugin("echo", 3), "echo");
+    const decision = await c.check(
+      ctx,
+      makeMcp("echo", 3),
+      makeTool("echo", 3),
+    );
     expect(decision.allowed).toBe(true);
   });
 
-  it("denies level 2 plugin when no approval", async () => {
+  it("denies tool default level 2 when no approval", async () => {
     const c = makeChecker({
       id: "agent-1",
-      plugins: [{ name: "risky", levelOverride: null }],
+      mcps: [{ name: "risky", levelOverride: null, toolOverrides: [] }],
     });
-    const decision = await c.check(ctx, makePlugin("risky", 2), "risky");
+    const decision = await c.check(
+      ctx,
+      makeMcp("risky", 2),
+      makeTool("risky", 2),
+    );
     expect(decision.allowed).toBe(false);
   });
 
-  it("allows level 2 plugin when override is 3", async () => {
+  it("allows when mcp bulk override is 3", async () => {
     const c = makeChecker({
       id: "agent-1",
-      plugins: [{ name: "risky", levelOverride: 3 }],
+      mcps: [{ name: "risky", levelOverride: 3, toolOverrides: [] }],
     });
-    const decision = await c.check(ctx, makePlugin("risky", 2), "risky");
+    const decision = await c.check(
+      ctx,
+      makeMcp("risky", 2),
+      makeTool("risky", 2),
+    );
     expect(decision.allowed).toBe(true);
   });
 
-  it("denies level 3 plugin when override is 1", async () => {
+  it("denies when mcp bulk override is 1 even though tool default is 3", async () => {
     const c = makeChecker({
       id: "agent-1",
-      plugins: [{ name: "echo", levelOverride: 1 }],
+      mcps: [{ name: "echo", levelOverride: 1, toolOverrides: [] }],
     });
-    const decision = await c.check(ctx, makePlugin("echo", 3), "echo");
+    const decision = await c.check(
+      ctx,
+      makeMcp("echo", 3),
+      makeTool("echo", 3),
+    );
     expect(decision.allowed).toBe(false);
   });
 
-  it("allows level 2 when allowList approves specific tool", async () => {
+  it("tool override takes precedence over mcp bulk override", async () => {
+    const c = makeChecker({
+      id: "agent-1",
+      mcps: [
+        {
+          name: "risky",
+          levelOverride: 1,
+          toolOverrides: [{ toolName: "safeRead", level: 3 }],
+        },
+      ],
+    });
+    const decision = await c.check(
+      ctx,
+      makeMcp("risky", 2),
+      makeTool("safeRead", 2),
+    );
+    expect(decision.allowed).toBe(true);
+  });
+
+  it("tool override of 1 denies an otherwise level-3 tool", async () => {
+    const c = makeChecker({
+      id: "agent-1",
+      mcps: [
+        {
+          name: "echo",
+          levelOverride: null,
+          toolOverrides: [{ toolName: "echo", level: 1 }],
+        },
+      ],
+    });
+    const decision = await c.check(
+      ctx,
+      makeMcp("echo", 3),
+      makeTool("echo", 3),
+    );
+    expect(decision.allowed).toBe(false);
+  });
+
+  it("allows level 2 when allowList approves the specific tool", async () => {
     const approvingList: AllowListProvider = {
-      isApproved: async (_c, plugin, tool) =>
-        plugin === "risky" && tool === "risky",
+      isApproved: async (_c, mcp, tool) => mcp === "risky" && tool === "risky",
     };
     const c = makeChecker(
       {
         id: "agent-1",
-        plugins: [{ name: "risky", levelOverride: null }],
+        mcps: [{ name: "risky", levelOverride: null, toolOverrides: [] }],
       },
       approvingList,
     );
-    const decision = await c.check(ctx, makePlugin("risky", 2), "risky");
+    const decision = await c.check(
+      ctx,
+      makeMcp("risky", 2),
+      makeTool("risky", 2),
+    );
     expect(decision.allowed).toBe(true);
   });
 });

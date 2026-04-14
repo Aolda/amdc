@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: "/scenarios", label: "Scenarios", icon: "S" },
   { href: "/agents", label: "Agents", icon: "A" },
   { href: "/skills", label: "Skills", icon: "K" },
+  { href: "/mcps", label: "MCPs", icon: "M" },
   { href: "/settings", label: "Settings", icon: "G" },
 ];
 

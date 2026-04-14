@@ -29,6 +29,20 @@
       "when": 1776129111708,
       "tag": "0003_concerned_shotgun",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1776135038366,
+      "tag": "0004_rename_plugins_to_mcps",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1776135651417,
+      "tag": "0005_melted_risque",
+      "breakpoints": true
     }
   ]
 }

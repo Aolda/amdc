@@ -2,12 +2,12 @@ import { Router, type Router as ExpressRouter } from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createProxyMcpServer } from "./proxy-server.js";
 import type { SessionRegistry } from "./session-registry.js";
-import type { PluginRegistry } from "./plugin-registry.js";
+import type { McpRegistry } from "./mcp-registry.js";
 import type { PermissionChecker } from "./types.js";
 
 export interface McpRouterDeps {
   sessionRegistry: SessionRegistry;
-  pluginRegistry: PluginRegistry;
+  mcpRegistry: McpRegistry;
   permissionChecker: PermissionChecker;
 }
 
@@ -22,7 +22,7 @@ export function createMcpRouter(deps: McpRouterDeps): ExpressRouter {
     }
     const server = createProxyMcpServer(
       ctx,
-      deps.pluginRegistry,
+      deps.mcpRegistry,
       deps.permissionChecker,
     );
     const transport = new StreamableHTTPServerTransport({

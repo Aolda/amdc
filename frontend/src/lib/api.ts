@@ -155,9 +155,17 @@ export async function deleteSkill(id: string): Promise<void> {
   if (!res.ok) throw new Error("Delete failed");
 }
 
-export interface AgentPluginLink {
+export type ToolLevel = 1 | 2 | 3;
+
+export interface AgentMcpToolOverride {
+  toolName: string;
+  level: ToolLevel;
+}
+
+export interface AgentMcpLink {
   name: string;
-  levelOverride: 1 | 2 | 3 | null;
+  levelOverride: ToolLevel | null;
+  toolOverrides: AgentMcpToolOverride[];
 }
 
 export interface Agent {
@@ -167,7 +175,7 @@ export interface Agent {
   body: string;
   skillIds: string[];
   subAgentIds: string[];
-  plugins: AgentPluginLink[];
+  mcps: AgentMcpLink[];
   createdAt: string;
   updatedAt: string;
 }
@@ -178,19 +186,74 @@ export interface AgentInput {
   body: string;
   skillIds?: string[];
   subAgentIds?: string[];
-  plugins?: AgentPluginLink[];
+  mcps?: AgentMcpLink[];
 }
 
-export interface Plugin {
+export interface Mcp {
   name: string;
   kind: string;
   description: string;
-  defaultLevel: 1 | 2 | 3;
+  defaultLevel: ToolLevel;
+  upstreamUrl?: string;
 }
 
-export async function fetchPlugins(): Promise<Plugin[]> {
-  const res = await fetch("/api/plugins");
-  return handleResponse<Plugin[]>(res);
+export interface McpToolDefinition {
+  name: string;
+  description: string;
+  level: ToolLevel;
+}
+
+export async function fetchMcps(): Promise<Mcp[]> {
+  const res = await fetch("/api/mcps");
+  return handleResponse<Mcp[]>(res);
+}
+
+export async function fetchMcpTools(
+  name: string,
+): Promise<McpToolDefinition[]> {
+  const res = await fetch(`/api/mcps/${encodeURIComponent(name)}/tools`);
+  return handleResponse<McpToolDefinition[]>(res);
+}
+
+export interface CreateMcpInput {
+  name: string;
+  description?: string;
+  defaultLevel: ToolLevel;
+  upstreamUrl: string;
+}
+
+export interface UpdateMcpInput {
+  description?: string;
+  defaultLevel?: ToolLevel;
+  upstreamUrl?: string;
+}
+
+export async function createMcp(input: CreateMcpInput): Promise<Mcp> {
+  const res = await fetch("/api/mcps", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return handleResponse<Mcp>(res);
+}
+
+export async function updateMcp(
+  name: string,
+  input: UpdateMcpInput,
+): Promise<Mcp> {
+  const res = await fetch(`/api/mcps/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return handleResponse<Mcp>(res);
+}
+
+export async function deleteMcp(name: string): Promise<void> {
+  const res = await fetch(`/api/mcps/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Delete failed");
 }
 
 export async function fetchAgents(): Promise<Agent[]> {

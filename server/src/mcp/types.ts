@@ -4,7 +4,7 @@ export interface SessionContext {
   agentId: string;
 }
 
-export type PluginKind = "native" | "mcp-upstream";
+export type McpKind = "native" | "upstream";
 
 export type ToolLevel = 1 | 2 | 3;
 
@@ -26,9 +26,9 @@ export interface ToolCallResult {
   [key: string]: unknown;
 }
 
-export interface Plugin {
+export interface Mcp {
   name: string;
-  kind: PluginKind;
+  kind: McpKind;
   description: string;
   defaultLevel: ToolLevel;
   listTools(): Promise<ToolDefinition[]>;
@@ -43,9 +43,10 @@ export interface NativeToolMeta {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  level?: ToolLevel;
 }
 
-export interface NativePluginMeta {
+export interface NativeMcpMeta {
   name: string;
   kind: "native";
   description: string;
@@ -62,15 +63,15 @@ export type NativeHandler = (
   ctx: SessionContext,
 ) => Promise<ToolCallResult>;
 
-export interface UpstreamPluginMeta {
+export interface UpstreamMcpMeta {
   name: string;
-  kind: "mcp-upstream";
+  kind: "upstream";
   description: string;
   defaultLevel: ToolLevel;
   upstreamUrl: string;
 }
 
-export type PluginMeta = NativePluginMeta | UpstreamPluginMeta;
+export type McpMeta = NativeMcpMeta | UpstreamMcpMeta;
 
 export interface PermissionDecision {
   allowed: boolean;
@@ -80,20 +81,26 @@ export interface PermissionDecision {
 export interface PermissionChecker {
   check(
     ctx: SessionContext,
-    plugin: Plugin,
-    toolName: string,
+    mcp: Mcp,
+    tool: ToolDefinition,
   ): Promise<PermissionDecision>;
 }
 
 export interface AllowListProvider {
   isApproved(
     ctx: SessionContext,
-    pluginName: string,
+    mcpName: string,
     toolName: string,
   ): Promise<boolean>;
 }
 
 export interface AgentLike {
   id: string;
-  plugins: { name: string; levelOverride: 1 | 2 | 3 | null }[];
+  mcps: AgentLikeMcp[];
+}
+
+export interface AgentLikeMcp {
+  name: string;
+  levelOverride: ToolLevel | null;
+  toolOverrides: { toolName: string; level: ToolLevel }[];
 }

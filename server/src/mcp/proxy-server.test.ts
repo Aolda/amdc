@@ -7,7 +7,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { createProxyMcpServer } from "./proxy-server.js";
-import { createPluginRegistry } from "./plugin-registry.js";
+import { createMcpRegistry } from "./mcp-registry.js";
 import {
   AgentDefaultPermissionChecker,
   AllowAllPermissionChecker,
@@ -16,10 +16,10 @@ import { echoMeta } from "./plugins/echo.js";
 import type { UpstreamTransportFactory } from "./plugins/mcp-upstream/factory.js";
 import type {
   AgentLike,
+  McpMeta,
   PermissionChecker,
-  PluginMeta,
   SessionContext,
-  UpstreamPluginMeta,
+  UpstreamMcpMeta,
 } from "./types.js";
 
 const ctx: SessionContext = {
@@ -29,11 +29,11 @@ const ctx: SessionContext = {
 };
 
 async function connectClient(
-  metas: PluginMeta[],
+  metas: McpMeta[],
   checker: PermissionChecker = new AllowAllPermissionChecker(),
   upstreamTransportFactory?: UpstreamTransportFactory,
 ): Promise<Client> {
-  const registry = createPluginRegistry(metas, { upstreamTransportFactory });
+  const registry = createMcpRegistry(metas, { upstreamTransportFactory });
   const server = createProxyMcpServer(ctx, registry, checker);
   const [clientTransport, serverTransport] =
     InMemoryTransport.createLinkedPair();
@@ -111,8 +111,8 @@ describe("proxy mcp server", () => {
     await client.close();
   });
 
-  it("filters tools/list by agent plugin permission", async () => {
-    const agent: AgentLike = { id: "agent-1", plugins: [] };
+  it("filters tools/list by agent mcp permission", async () => {
+    const agent: AgentLike = { id: "agent-1", mcps: [] };
     const checker = new AgentDefaultPermissionChecker({
       getAgent: async () => agent,
     });
@@ -122,8 +122,8 @@ describe("proxy mcp server", () => {
     await client.close();
   });
 
-  it("returns permission-denied error on callTool when plugin not allowed", async () => {
-    const agent: AgentLike = { id: "agent-1", plugins: [] };
+  it("returns permission-denied error on callTool when mcp not allowed", async () => {
+    const agent: AgentLike = { id: "agent-1", mcps: [] };
     const checker = new AgentDefaultPermissionChecker({
       getAgent: async () => agent,
     });
@@ -139,9 +139,9 @@ describe("proxy mcp server", () => {
   });
 
   it("exposes upstream MCP tools through passthrough with namespaced names", async () => {
-    const upstreamMeta: UpstreamPluginMeta = {
+    const upstreamMeta: UpstreamMcpMeta = {
       name: "mock",
-      kind: "mcp-upstream",
+      kind: "upstream",
       description: "mock upstream",
       defaultLevel: 3,
       upstreamUrl: "http://ignored",
@@ -162,10 +162,10 @@ describe("proxy mcp server", () => {
     await client.close();
   });
 
-  it("exposes tool when agent has plugin selected with default level", async () => {
+  it("exposes tool when agent has mcp selected with default level", async () => {
     const agent: AgentLike = {
       id: "agent-1",
-      plugins: [{ name: "echo", levelOverride: null }],
+      mcps: [{ name: "echo", levelOverride: null, toolOverrides: [] }],
     };
     const checker = new AgentDefaultPermissionChecker({
       getAgent: async () => agent,
