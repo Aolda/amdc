@@ -86,7 +86,8 @@ interface NewToolDraft {
   underlyingToolName: string;
   description: string;
   level: ToolLevel;
-  fixedParams: string;
+  paramValues: Record<string, string>;
+  rawJson: string;
 }
 
 const emptyDraft = (defaultLevel: ToolLevel): NewToolDraft => ({
@@ -94,31 +95,202 @@ const emptyDraft = (defaultLevel: ToolLevel): NewToolDraft => ({
   underlyingToolName: "",
   description: "",
   level: defaultLevel,
-  fixedParams: "",
+  paramValues: {},
+  rawJson: "",
 });
 
-function parseFixedParams(raw: string): {
-  value: Record<string, unknown> | undefined;
-  error: string | null;
-} {
-  const trimmed = raw.trim();
-  if (trimmed === "") return { value: undefined, error: null };
-  try {
-    const parsed = JSON.parse(trimmed) as unknown;
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      Array.isArray(parsed)
-    ) {
-      return { value: undefined, error: "fixedParams must be a JSON object" };
-    }
-    return { value: parsed as Record<string, unknown>, error: null };
-  } catch (err) {
-    return {
-      value: undefined,
-      error: err instanceof Error ? err.message : "invalid JSON",
-    };
+interface SchemaProperty {
+  name: string;
+  type: string;
+  description?: string;
+  required: boolean;
+  enumValues?: unknown[];
+}
+
+function normalizeSchemaType(rawType: unknown): string {
+  if (typeof rawType === "string") return rawType;
+  if (Array.isArray(rawType)) {
+    const first = rawType.find((t) => typeof t === "string");
+    return typeof first === "string" ? first : "string";
   }
+  return "string";
+}
+
+function extractSchemaProperties(
+  schema: Record<string, unknown> | undefined,
+): SchemaProperty[] {
+  if (!schema) return [];
+  const properties = schema.properties;
+  if (typeof properties !== "object" || properties === null) return [];
+  const required = Array.isArray(schema.required)
+    ? (schema.required as unknown[]).filter(
+        (v): v is string => typeof v === "string",
+      )
+    : [];
+  return Object.entries(properties).map(([name, raw]) => {
+    const def = (typeof raw === "object" && raw !== null ? raw : {}) as Record<
+      string,
+      unknown
+    >;
+    const type = normalizeSchemaType(def.type);
+    return {
+      name,
+      type,
+      description:
+        typeof def.description === "string" ? def.description : undefined,
+      required: required.includes(name),
+      enumValues: Array.isArray(def.enum) ? (def.enum as unknown[]) : undefined,
+    };
+  });
+}
+
+function coerceValue(
+  type: string,
+  raw: string,
+): { value: unknown; error: string | null } {
+  if (type === "number" || type === "integer") {
+    const n = Number(raw);
+    if (Number.isNaN(n)) return { value: null, error: "not a number" };
+    return { value: n, error: null };
+  }
+  if (type === "boolean") {
+    if (raw === "true") return { value: true, error: null };
+    if (raw === "false") return { value: false, error: null };
+    return { value: null, error: "must be true or false" };
+  }
+  if (type === "object" || type === "array") {
+    try {
+      return { value: JSON.parse(raw) as unknown, error: null };
+    } catch (err) {
+      return {
+        value: null,
+        error: err instanceof Error ? err.message : "invalid JSON",
+      };
+    }
+  }
+  return { value: raw, error: null };
+}
+
+function buildFixedParams(
+  draft: NewToolDraft,
+  properties: SchemaProperty[],
+): { value: Record<string, unknown>; error: string | null } {
+  const out: Record<string, unknown> = {};
+  for (const prop of properties) {
+    const raw = draft.paramValues[prop.name];
+    if (raw === undefined || raw === "") continue;
+    const { value, error } = coerceValue(prop.type, raw);
+    if (error) return { value: out, error: `${prop.name}: ${error}` };
+    out[prop.name] = value;
+  }
+  const trimmed = draft.rawJson.trim();
+  if (trimmed) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        return { value: out, error: "extra JSON must be an object" };
+      }
+      Object.assign(out, parsed);
+    } catch (err) {
+      return {
+        value: out,
+        error: `extra JSON: ${err instanceof Error ? err.message : "invalid"}`,
+      };
+    }
+  }
+  return { value: out, error: null };
+}
+
+function ParamFieldInput({
+  prop,
+  value,
+  onChange,
+}: {
+  prop: SchemaProperty;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  if (prop.enumValues) {
+    return (
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-md border bg-background px-2 py-1 text-xs"
+      >
+        <option value="">— leave unset —</option>
+        {prop.enumValues.map((v) => (
+          <option key={String(v)} value={String(v)}>
+            {String(v)}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  if (prop.type === "boolean") {
+    return (
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-md border bg-background px-2 py-1 text-xs"
+      >
+        <option value="">— leave unset —</option>
+        <option value="true">true</option>
+        <option value="false">false</option>
+      </select>
+    );
+  }
+  if (prop.type === "object" || prop.type === "array") {
+    return (
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={2}
+        className="w-full rounded-md border bg-background px-2 py-1 font-mono text-xs"
+        placeholder={prop.type === "array" ? "[]" : "{}"}
+      />
+    );
+  }
+  const inputType =
+    prop.type === "number" || prop.type === "integer" ? "number" : "text";
+  return (
+    <Input
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={`${prop.type} (leave blank to not pin)`}
+      className="h-7 text-xs"
+      type={inputType}
+    />
+  );
+}
+
+function ParamField({
+  prop,
+  value,
+  onChange,
+}: {
+  prop: SchemaProperty;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs">
+        <span className="font-mono">{prop.name}</span>
+        <span className="ml-2 text-muted-foreground">
+          {prop.type}
+          {prop.required ? " · required" : " · optional"}
+        </span>
+      </Label>
+      {prop.description && (
+        <p className="text-xs text-muted-foreground">{prop.description}</p>
+      )}
+      <ParamFieldInput prop={prop} value={value} onChange={onChange} />
+    </div>
+  );
 }
 
 export function McpToolsEditor({ mcpName, mcpKind, defaultLevel }: Props) {
@@ -183,19 +355,30 @@ export function McpToolsEditor({ mcpName, mcpKind, defaultLevel }: Props) {
     return Array.from(set).sort();
   })();
 
+  const selectedUnderlying = draft.underlyingToolName
+    ? (tools.find(
+        (t) =>
+          t.wrapperName === draft.underlyingToolName ||
+          t.name === draft.underlyingToolName,
+      ) ?? null)
+    : null;
+  const underlyingSchemaProps = extractSchemaProperties(
+    selectedUnderlying?.inputSchema,
+  );
+
   async function handleCreate() {
     setError(null);
-    const parsed = parseFixedParams(draft.fixedParams);
-    if (parsed.error) {
-      setError(`fixedParams: ${parsed.error}`);
-      return;
-    }
     if (!draft.wrapperName.trim()) {
       setError("wrapperName is required");
       return;
     }
     if (supportsUnderlying && !draft.underlyingToolName) {
       setError("pick an underlying tool to wrap");
+      return;
+    }
+    const params = buildFixedParams(draft, underlyingSchemaProps);
+    if (params.error) {
+      setError(`fixedParams: ${params.error}`);
       return;
     }
     setCreating(true);
@@ -205,7 +388,10 @@ export function McpToolsEditor({ mcpName, mcpKind, defaultLevel }: Props) {
         underlyingToolName: draft.underlyingToolName.trim() || null,
         description: draft.description,
         level: draft.level,
-        config: parsed.value ? { fixedParams: parsed.value } : {},
+        config:
+          Object.keys(params.value).length > 0
+            ? { fixedParams: params.value }
+            : {},
       });
       setDraft(emptyDraft(defaultLevel));
       refresh();
@@ -323,17 +509,58 @@ export function McpToolsEditor({ mcpName, mcpKind, defaultLevel }: Props) {
               <option value={3}>3</option>
             </select>
           </div>
-          <div className="space-y-1 col-span-2">
-            <Label>fixedParams (JSON object, optional)</Label>
-            <textarea
-              value={draft.fixedParams}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, fixedParams: e.target.value }))
-              }
-              rows={3}
-              className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
-              placeholder='{ "query": "rate(cpu[5m])" }'
-            />
+          <div className="col-span-2 space-y-2 rounded-md border bg-muted/20 p-3">
+            <div className="flex items-baseline justify-between">
+              <Label className="text-sm font-semibold">
+                fixedParams (pin values on the wrapped tool)
+              </Label>
+              {selectedUnderlying?.description && (
+                <span className="text-xs text-muted-foreground">
+                  {selectedUnderlying.description}
+                </span>
+              )}
+            </div>
+            {!selectedUnderlying && (
+              <p className="text-xs text-muted-foreground">
+                Pick an underlying tool above to see its parameters.
+              </p>
+            )}
+            {selectedUnderlying && underlyingSchemaProps.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                The selected tool exposes no inputSchema properties. Use the raw
+                JSON override below if you need to pin something anyway.
+              </p>
+            )}
+            {underlyingSchemaProps.map((prop) => {
+              const current = draft.paramValues[prop.name] ?? "";
+              const setField = (value: string) =>
+                setDraft((d) => ({
+                  ...d,
+                  paramValues: { ...d.paramValues, [prop.name]: value },
+                }));
+              return (
+                <ParamField
+                  key={prop.name}
+                  prop={prop}
+                  value={current}
+                  onChange={setField}
+                />
+              );
+            })}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                extra JSON (optional, merged on top of the above)
+              </Label>
+              <textarea
+                value={draft.rawJson}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, rawJson: e.target.value }))
+                }
+                rows={2}
+                className="w-full rounded-md border bg-background px-2 py-1 font-mono text-xs"
+                placeholder='{ "unusual_field": "..." }'
+              />
+            </div>
           </div>
         </div>
         <div className="mt-3">
