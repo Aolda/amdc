@@ -69,6 +69,7 @@ export const mcps = sqliteTable("mcps", {
   description: text("description").notNull().default(""),
   defaultLevel: integer("default_level").notNull(),
   metadata: text("metadata").notNull().default("{}"),
+  config: text("config").notNull().default("{}"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -112,6 +113,12 @@ export const mcpTools = sqliteTable(
       .references(() => mcps.name, { onDelete: "cascade" }),
     toolName: text("tool_name").notNull(),
     level: integer("level").notNull(),
+    kind: text("kind").notNull().default("mcp"),
+    underlyingToolName: text("underlying_tool_name"),
+    description: text("description").notNull().default(""),
+    inputSchema: text("input_schema").notNull().default("{}"),
+    hidden: integer("hidden").notNull().default(0),
+    config: text("config").notNull().default("{}"),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.mcpName, table.toolName] }),

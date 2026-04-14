@@ -1,7 +1,10 @@
+export type Environment = "staging" | "prod";
+
 export interface SessionContext {
   token: string;
   sessionId: string;
   agentId: string;
+  environment?: Environment;
 }
 
 export type McpKind = "native" | "upstream";
