@@ -8,6 +8,7 @@ import type {
   McpKind,
   ToolLevel,
   UpstreamMcpMeta,
+  UpstreamTransport,
 } from "../mcp/types.js";
 import { upsertMcpToolLevel } from "../mcp/mcp-sync.js";
 import type { WrapperConfig, WrapperKind, WrapperRow } from "../mcp/wrapper.js";
@@ -19,20 +20,137 @@ import {
   updateWrapperRow,
 } from "../mcp/wrapper-repository.js";
 
-interface UpstreamMetadata {
-  upstreamUrl: string;
+interface ParsedUpstreamMetadata {
+  transport: UpstreamTransport;
+  upstreamUrl?: string;
+  upstreamCommand?: string[];
+  upstreamEnv?: Record<string, string>;
+  upstreamCwd?: string;
 }
 
-function parseUpstreamMetadata(value: string): UpstreamMetadata {
+function parseUpstreamMetadata(value: string): ParsedUpstreamMetadata {
   try {
     const parsed = JSON.parse(value) as Record<string, unknown>;
-    if (typeof parsed.upstreamUrl !== "string") {
-      throw new Error("upstreamUrl missing");
+    if (parsed.transport === "stdio") {
+      const command = Array.isArray(parsed.upstreamCommand)
+        ? (parsed.upstreamCommand as unknown[]).filter(
+            (v): v is string => typeof v === "string",
+          )
+        : [];
+      const env =
+        typeof parsed.upstreamEnv === "object" && parsed.upstreamEnv !== null
+          ? (parsed.upstreamEnv as Record<string, string>)
+          : undefined;
+      return {
+        transport: "stdio",
+        upstreamCommand: command,
+        upstreamEnv: env,
+        upstreamCwd:
+          typeof parsed.upstreamCwd === "string"
+            ? parsed.upstreamCwd
+            : undefined,
+      };
     }
-    return { upstreamUrl: parsed.upstreamUrl };
+    return {
+      transport: "http",
+      upstreamUrl:
+        typeof parsed.upstreamUrl === "string" ? parsed.upstreamUrl : "",
+    };
   } catch {
-    return { upstreamUrl: "" };
+    return { transport: "http", upstreamUrl: "" };
   }
+}
+
+function serializeUpstreamMetadata(meta: ParsedUpstreamMetadata): string {
+  if (meta.transport === "stdio") {
+    return JSON.stringify({
+      transport: "stdio",
+      upstreamCommand: meta.upstreamCommand ?? [],
+      upstreamEnv: meta.upstreamEnv ?? {},
+      upstreamCwd: meta.upstreamCwd,
+    });
+  }
+  return JSON.stringify({
+    transport: "http",
+    upstreamUrl: meta.upstreamUrl ?? "",
+  });
+}
+
+interface McpPostBody {
+  name?: string;
+  description?: string;
+  defaultLevel?: number;
+  upstreamUrl?: string;
+  upstreamCommand?: string[];
+  upstreamEnv?: Record<string, string>;
+  upstreamCwd?: string;
+  transport?: UpstreamTransport;
+  kind?: McpKind;
+}
+
+function validateMcpPostBody(body: McpPostBody): {
+  error?: string;
+  kind?: McpKind;
+  transport?: UpstreamTransport;
+} {
+  const kind: McpKind = body.kind ?? "upstream";
+  if (kind !== "upstream" && kind !== "cli") {
+    return { error: "kind must be upstream or cli" };
+  }
+  if (
+    !body.name ||
+    typeof body.name !== "string" ||
+    body.defaultLevel === undefined ||
+    ![1, 2, 3].includes(body.defaultLevel)
+  ) {
+    return { error: "name and defaultLevel(1|2|3) required" };
+  }
+  const transport: UpstreamTransport =
+    body.transport ?? (body.upstreamCommand ? "stdio" : "http");
+  if (kind !== "upstream") {
+    return { kind, transport };
+  }
+  if (
+    transport === "http" &&
+    (!body.upstreamUrl || typeof body.upstreamUrl !== "string")
+  ) {
+    return { error: "upstreamUrl required for http transport" };
+  }
+  if (
+    transport === "stdio" &&
+    (!Array.isArray(body.upstreamCommand) || body.upstreamCommand.length === 0)
+  ) {
+    return { error: "upstreamCommand (non-empty array) required for stdio" };
+  }
+  return { kind, transport };
+}
+
+function upstreamMetaFromPayload(
+  name: string,
+  description: string,
+  defaultLevel: ToolLevel,
+  parsed: ParsedUpstreamMetadata,
+): UpstreamMcpMeta {
+  if (parsed.transport === "stdio") {
+    return {
+      name,
+      kind: "upstream",
+      description,
+      defaultLevel,
+      transport: "stdio",
+      upstreamCommand: parsed.upstreamCommand ?? [],
+      upstreamEnv: parsed.upstreamEnv,
+      upstreamCwd: parsed.upstreamCwd,
+    };
+  }
+  return {
+    name,
+    kind: "upstream",
+    description,
+    defaultLevel,
+    transport: "http",
+    upstreamUrl: parsed.upstreamUrl ?? "",
+  };
 }
 
 interface WrapperRowPayload {
@@ -132,16 +250,28 @@ export function createMcpsRouter(
 
   router.get("/", async (_req, res) => {
     const rows = await db.select().from(mcpsTable);
-    const data = rows.map((row) => ({
-      name: row.name,
-      kind: row.kind,
-      description: row.description,
-      defaultLevel: row.defaultLevel,
-      upstreamUrl:
-        row.kind === "upstream"
-          ? parseUpstreamMetadata(row.metadata).upstreamUrl
-          : undefined,
-    }));
+    const data = rows.map((row) => {
+      if (row.kind !== "upstream") {
+        return {
+          name: row.name,
+          kind: row.kind,
+          description: row.description,
+          defaultLevel: row.defaultLevel,
+        };
+      }
+      const parsed = parseUpstreamMetadata(row.metadata);
+      return {
+        name: row.name,
+        kind: row.kind,
+        description: row.description,
+        defaultLevel: row.defaultLevel,
+        transport: parsed.transport,
+        upstreamUrl: parsed.upstreamUrl,
+        upstreamCommand: parsed.upstreamCommand,
+        upstreamEnv: parsed.upstreamEnv,
+        upstreamCwd: parsed.upstreamCwd,
+      };
+    });
     res.json({ data });
   });
 
@@ -309,40 +439,29 @@ export function createMcpsRouter(
   });
 
   router.post("/", async (req, res) => {
-    const { name, description, defaultLevel, upstreamUrl, kind } = req.body as {
-      name?: string;
-      description?: string;
-      defaultLevel?: number;
-      upstreamUrl?: string;
-      kind?: McpKind;
-    };
-    const resolvedKind: McpKind = kind ?? "upstream";
-    if (resolvedKind !== "upstream" && resolvedKind !== "cli") {
-      res
-        .status(400)
-        .json({ error: { message: "kind must be upstream or cli" } });
-      return;
-    }
+    const body = req.body as McpPostBody;
+    const validation = validateMcpPostBody(body);
     if (
-      !name ||
-      typeof name !== "string" ||
-      defaultLevel === undefined ||
-      ![1, 2, 3].includes(defaultLevel)
-    ) {
-      res.status(400).json({
-        error: { message: "name and defaultLevel(1|2|3) required" },
-      });
-      return;
-    }
-    if (
-      resolvedKind === "upstream" &&
-      (!upstreamUrl || typeof upstreamUrl !== "string")
+      validation.error ||
+      validation.kind === undefined ||
+      validation.transport === undefined
     ) {
       res
         .status(400)
-        .json({ error: { message: "upstreamUrl required for upstream kind" } });
+        .json({ error: { message: validation.error ?? "invalid body" } });
       return;
     }
+    const resolvedKind = validation.kind;
+    const resolvedTransport = validation.transport;
+    const {
+      name,
+      description,
+      defaultLevel,
+      upstreamUrl,
+      upstreamCommand,
+      upstreamEnv,
+      upstreamCwd,
+    } = body;
     const existing = await db
       .select()
       .from(mcpsTable)
@@ -354,26 +473,34 @@ export function createMcpsRouter(
       return;
     }
     const now = new Date().toISOString();
+    const parsedMeta: ParsedUpstreamMetadata = {
+      transport: resolvedTransport,
+      upstreamUrl,
+      upstreamCommand,
+      upstreamEnv,
+      upstreamCwd,
+    };
     await db.insert(mcpsTable).values({
       name,
       kind: resolvedKind,
       description: description ?? "",
       defaultLevel,
       metadata:
-        resolvedKind === "upstream" ? JSON.stringify({ upstreamUrl }) : "{}",
+        resolvedKind === "upstream"
+          ? serializeUpstreamMetadata(parsedMeta)
+          : "{}",
       createdAt: now,
       updatedAt: now,
     });
     if (registry) {
       const meta: UpstreamMcpMeta | CliMcpMeta =
         resolvedKind === "upstream"
-          ? {
+          ? upstreamMetaFromPayload(
               name,
-              kind: "upstream",
-              description: description ?? "",
-              defaultLevel: defaultLevel as ToolLevel,
-              upstreamUrl: upstreamUrl ?? "",
-            }
+              description ?? "",
+              defaultLevel as ToolLevel,
+              parsedMeta,
+            )
           : {
               name,
               kind: "cli",
@@ -388,7 +515,15 @@ export function createMcpsRouter(
         kind: resolvedKind,
         description: description ?? "",
         defaultLevel,
-        upstreamUrl: resolvedKind === "upstream" ? upstreamUrl : undefined,
+        transport: resolvedKind === "upstream" ? resolvedTransport : undefined,
+        upstreamUrl:
+          resolvedKind === "upstream" && resolvedTransport === "http"
+            ? upstreamUrl
+            : undefined,
+        upstreamCommand:
+          resolvedKind === "upstream" && resolvedTransport === "stdio"
+            ? upstreamCommand
+            : undefined,
       },
     });
   });
@@ -407,10 +542,22 @@ export function createMcpsRouter(
       res.status(403).json({ error: { message: "native mcp is read-only" } });
       return;
     }
-    const { description, defaultLevel, upstreamUrl } = req.body as {
+    const {
+      description,
+      defaultLevel,
+      upstreamUrl,
+      upstreamCommand,
+      upstreamEnv,
+      upstreamCwd,
+      transport,
+    } = req.body as {
       description?: string;
       defaultLevel?: number;
       upstreamUrl?: string;
+      upstreamCommand?: string[];
+      upstreamEnv?: Record<string, string>;
+      upstreamCwd?: string;
+      transport?: UpstreamTransport;
     };
     const now = new Date().toISOString();
     const nextDescription = description ?? existing.description;
@@ -421,14 +568,19 @@ export function createMcpsRouter(
         .json({ error: { message: "defaultLevel must be 1|2|3" } });
       return;
     }
-    const nextMetadata =
-      existing.kind === "upstream"
-        ? JSON.stringify({
-            upstreamUrl:
-              upstreamUrl ??
-              parseUpstreamMetadata(existing.metadata).upstreamUrl,
-          })
-        : existing.metadata;
+    let nextMetadata = existing.metadata;
+    let parsedMeta: ParsedUpstreamMetadata | null = null;
+    if (existing.kind === "upstream") {
+      const currentParsed = parseUpstreamMetadata(existing.metadata);
+      parsedMeta = {
+        transport: transport ?? currentParsed.transport,
+        upstreamUrl: upstreamUrl ?? currentParsed.upstreamUrl,
+        upstreamCommand: upstreamCommand ?? currentParsed.upstreamCommand,
+        upstreamEnv: upstreamEnv ?? currentParsed.upstreamEnv,
+        upstreamCwd: upstreamCwd ?? currentParsed.upstreamCwd,
+      };
+      nextMetadata = serializeUpstreamMetadata(parsedMeta);
+    }
     await db
       .update(mcpsTable)
       .set({
@@ -441,14 +593,13 @@ export function createMcpsRouter(
     if (registry) {
       registry.removeMcp(existing.name);
       const meta: UpstreamMcpMeta | CliMcpMeta =
-        existing.kind === "upstream"
-          ? {
-              name: existing.name,
-              kind: "upstream",
-              description: nextDescription,
-              defaultLevel: nextDefaultLevel as ToolLevel,
-              upstreamUrl: parseUpstreamMetadata(nextMetadata).upstreamUrl,
-            }
+        existing.kind === "upstream" && parsedMeta
+          ? upstreamMetaFromPayload(
+              existing.name,
+              nextDescription,
+              nextDefaultLevel as ToolLevel,
+              parsedMeta,
+            )
           : {
               name: existing.name,
               kind: "cli",
@@ -463,9 +614,12 @@ export function createMcpsRouter(
         kind: existing.kind,
         description: nextDescription,
         defaultLevel: nextDefaultLevel,
+        transport: parsedMeta?.transport,
         upstreamUrl:
-          existing.kind === "upstream"
-            ? parseUpstreamMetadata(nextMetadata).upstreamUrl
+          parsedMeta?.transport === "http" ? parsedMeta.upstreamUrl : undefined,
+        upstreamCommand:
+          parsedMeta?.transport === "stdio"
+            ? parsedMeta.upstreamCommand
             : undefined,
       },
     });

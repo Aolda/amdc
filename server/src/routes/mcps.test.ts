@@ -148,6 +148,41 @@ describe("PUT /api/mcps/:name", () => {
   });
 });
 
+describe("POST /api/mcps with stdio transport", () => {
+  it("creates an upstream mcp with stdio transport and command", async () => {
+    const res = await request(app)
+      .post("/api/mcps")
+      .send({
+        name: "notion",
+        kind: "upstream",
+        transport: "stdio",
+        defaultLevel: 2,
+        upstreamCommand: ["npx", "@notionhq/notion-mcp-server"],
+        upstreamEnv: { NOTION_TOKEN: "xxx" },
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.data).toMatchObject({
+      name: "notion",
+      kind: "upstream",
+      transport: "stdio",
+    });
+    expect(res.body.data.upstreamCommand).toEqual([
+      "npx",
+      "@notionhq/notion-mcp-server",
+    ]);
+  });
+
+  it("rejects stdio without upstreamCommand", async () => {
+    const res = await request(app).post("/api/mcps").send({
+      name: "bad_stdio",
+      kind: "upstream",
+      transport: "stdio",
+      defaultLevel: 2,
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("POST /api/mcps with kind=cli", () => {
   it("creates a cli kind mcp without upstreamUrl", async () => {
     const res = await request(app).post("/api/mcps").send({

@@ -56,7 +56,7 @@ function makeMockUpstream(
   tools: { name: string; inputSchema?: Record<string, unknown> }[],
   handler: (name: string, args: unknown) => unknown,
 ): UpstreamTransportFactory {
-  return (_url) => {
+  return (_meta) => {
     const server = new Server(
       { name: "mock", version: "0" },
       { capabilities: { tools: {} } },
@@ -153,6 +153,7 @@ describe("proxy mcp server", () => {
       kind: "upstream",
       description: "mock upstream",
       defaultLevel: 3,
+      transport: "http",
       upstreamUrl: "http://ignored",
     };
     const factory = makeMockUpstream([{ name: "ping" }], (_name, args) => ({
@@ -177,6 +178,7 @@ describe("proxy mcp server", () => {
       kind: "upstream",
       description: "",
       defaultLevel: 3,
+      transport: "http",
       upstreamUrl: "http://ignored",
     };
     const factory = makeMockUpstream([{ name: "query" }], (_name, args) => ({

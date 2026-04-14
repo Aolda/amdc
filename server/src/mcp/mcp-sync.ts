@@ -10,7 +10,18 @@ import type {
 
 function metadataFor(meta: McpMeta): string {
   if (meta.kind === "upstream") {
-    return JSON.stringify({ upstreamUrl: meta.upstreamUrl });
+    if (meta.transport === "stdio") {
+      return JSON.stringify({
+        transport: "stdio",
+        upstreamCommand: meta.upstreamCommand,
+        upstreamEnv: meta.upstreamEnv ?? {},
+        upstreamCwd: meta.upstreamCwd,
+      });
+    }
+    return JSON.stringify({
+      transport: "http",
+      upstreamUrl: meta.upstreamUrl,
+    });
   }
   return "{}";
 }
@@ -102,6 +113,44 @@ export async function upsertMcpToolLevel(
   }
 }
 
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return (value as unknown[]).filter((v): v is string => typeof v === "string");
+}
+
+function toStringRecord(value: unknown): Record<string, string> | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  return value as Record<string, string>;
+}
+
+function buildUpstreamMetaFromRow(
+  row: { name: string; description: string; defaultLevel: number },
+  parsed: Record<string, unknown>,
+): UpstreamMcpMeta {
+  const base = {
+    name: row.name,
+    kind: "upstream" as const,
+    description: row.description,
+    defaultLevel: row.defaultLevel as ToolLevel,
+  };
+  if (parsed.transport === "stdio") {
+    return {
+      ...base,
+      transport: "stdio",
+      upstreamCommand: toStringArray(parsed.upstreamCommand),
+      upstreamEnv: toStringRecord(parsed.upstreamEnv),
+      upstreamCwd:
+        typeof parsed.upstreamCwd === "string" ? parsed.upstreamCwd : undefined,
+    };
+  }
+  return {
+    ...base,
+    transport: "http",
+    upstreamUrl:
+      typeof parsed.upstreamUrl === "string" ? parsed.upstreamUrl : "",
+  };
+}
+
 export async function loadUpstreamMcpsFromDb(
   db: DB,
 ): Promise<UpstreamMcpMeta[]> {
@@ -109,24 +158,20 @@ export async function loadUpstreamMcpsFromDb(
   const result: UpstreamMcpMeta[] = [];
   for (const row of rows) {
     if (row.kind !== "upstream") continue;
-    let upstreamUrl = "";
-    try {
-      const parsed = JSON.parse(row.metadata) as Record<string, unknown>;
-      if (typeof parsed.upstreamUrl === "string") {
-        upstreamUrl = parsed.upstreamUrl;
-      }
-    } catch {
-      // skip malformed metadata
-    }
-    result.push({
-      name: row.name,
-      kind: "upstream",
-      description: row.description,
-      defaultLevel: row.defaultLevel as ToolLevel,
-      upstreamUrl,
-    });
+    result.push(buildUpstreamMetaFromRow(row, safeParseObject(row.metadata)));
   }
   return result;
+}
+
+function safeParseObject(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
 }
 
 export async function loadCliMcpsFromDb(db: DB): Promise<CliMcpMeta[]> {

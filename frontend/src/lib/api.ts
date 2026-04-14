@@ -189,12 +189,18 @@ export interface AgentInput {
   mcps?: AgentMcpLink[];
 }
 
+export type UpstreamTransport = "http" | "stdio";
+
 export interface Mcp {
   name: string;
   kind: string;
   description: string;
   defaultLevel: ToolLevel;
+  transport?: UpstreamTransport;
   upstreamUrl?: string;
+  upstreamCommand?: string[];
+  upstreamEnv?: Record<string, string>;
+  upstreamCwd?: string;
 }
 
 export type WrapperKind = "mcp" | "native" | "cli" | "script";
@@ -297,15 +303,23 @@ export type McpKind = "upstream" | "cli" | "native";
 export interface CreateMcpInput {
   name: string;
   kind?: McpKind;
+  transport?: UpstreamTransport;
   description?: string;
   defaultLevel: ToolLevel;
   upstreamUrl?: string;
+  upstreamCommand?: string[];
+  upstreamEnv?: Record<string, string>;
+  upstreamCwd?: string;
 }
 
 export interface UpdateMcpInput {
   description?: string;
   defaultLevel?: ToolLevel;
+  transport?: UpstreamTransport;
   upstreamUrl?: string;
+  upstreamCommand?: string[];
+  upstreamEnv?: Record<string, string>;
+  upstreamCwd?: string;
 }
 
 export async function createMcp(input: CreateMcpInput): Promise<Mcp> {

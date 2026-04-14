@@ -27,7 +27,7 @@ interface MockUpstreamOptions {
 async function buildMockUpstream(
   opts: MockUpstreamOptions,
 ): Promise<UpstreamTransportFactory> {
-  return (_url) => {
+  return (_meta) => {
     const server = new Server(
       { name: "mock-upstream", version: "0.0.1" },
       { capabilities: { tools: {} } },
@@ -63,6 +63,7 @@ const meta: UpstreamMcpMeta = {
   kind: "upstream",
   description: "mock upstream",
   defaultLevel: 3,
+  transport: "http",
   upstreamUrl: "http://ignored",
 };
 
@@ -100,7 +101,7 @@ describe("buildUpstreamMcp", () => {
 
   it("caches tools across multiple listTools calls", async () => {
     let listCount = 0;
-    const factory: UpstreamTransportFactory = (_url) => {
+    const factory: UpstreamTransportFactory = (_meta) => {
       const server = new Server(
         { name: "u", version: "0" },
         { capabilities: { tools: {} } },
@@ -129,8 +130,48 @@ describe("buildUpstreamMcp", () => {
     expect(listCount).toBe(1);
   });
 
+  it("passes stdio transport fields into the factory callback", async () => {
+    const stdioMeta: UpstreamMcpMeta = {
+      name: "notion",
+      kind: "upstream",
+      description: "",
+      defaultLevel: 3,
+      transport: "stdio",
+      upstreamCommand: ["npx", "@notionhq/notion-mcp-server"],
+      upstreamEnv: { NOTION_TOKEN: "xxx" },
+    };
+    let captured: UpstreamMcpMeta | null = null;
+    const factory: UpstreamTransportFactory = (metaArg) => {
+      captured = metaArg;
+      const server = new Server(
+        { name: "s", version: "0" },
+        { capabilities: { tools: {} } },
+      );
+      server.setRequestHandler(ListToolsRequestSchema, async () => ({
+        tools: [{ name: "search", inputSchema: { type: "object" } }],
+      }));
+      server.setRequestHandler(CallToolRequestSchema, async () => ({
+        content: [{ type: "text", text: "" }],
+      }));
+      const [ct, st] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name: "c", version: "0" });
+      return {
+        client,
+        connect: async () => {
+          await server.connect(st);
+          await client.connect(ct);
+        },
+      };
+    };
+    const mcp = buildUpstreamMcp(stdioMeta, factory);
+    const tools = await mcp.listTools();
+    expect(captured).not.toBeNull();
+    expect((captured as UpstreamMcpMeta).transport).toBe("stdio");
+    expect(tools.map((t) => t.name)).toEqual(["notion__search"]);
+  });
+
   it("returns empty tools list when upstream connection fails", async () => {
-    const factory: UpstreamTransportFactory = (_url) => ({
+    const factory: UpstreamTransportFactory = (_meta) => ({
       client: new Client({ name: "c", version: "0" }),
       connect: async () => {
         throw new Error("connection refused");

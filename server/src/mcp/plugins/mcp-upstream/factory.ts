@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type {
   Mcp,
   SessionContext,
@@ -21,20 +22,38 @@ function stripNamespace(mcpName: string, fullToolName: string): string {
 }
 
 export interface UpstreamTransportFactory {
-  (url: string): {
+  (meta: UpstreamMcpMeta): {
     client: Client;
     connect: () => Promise<void>;
   };
 }
 
 export const defaultUpstreamTransportFactory: UpstreamTransportFactory = (
-  url,
+  meta,
 ) => {
   const client = new Client({ name: "amdc-proxy-upstream", version: "0.1.0" });
   return {
     client,
     connect: async () => {
-      const transport = new StreamableHTTPClientTransport(new URL(url));
+      if (meta.transport === "stdio") {
+        const [command, ...args] = meta.upstreamCommand;
+        if (!command) {
+          throw new Error(
+            `upstream stdio mcp '${meta.name}' has empty command`,
+          );
+        }
+        const transport = new StdioClientTransport({
+          command,
+          args,
+          env: meta.upstreamEnv,
+          cwd: meta.upstreamCwd,
+        });
+        await client.connect(transport);
+        return;
+      }
+      const transport = new StreamableHTTPClientTransport(
+        new URL(meta.upstreamUrl),
+      );
       await client.connect(transport);
     },
   };
@@ -50,7 +69,7 @@ export function buildUpstreamMcp(
   async function ensureClient(): Promise<Client> {
     if (!clientPromise) {
       clientPromise = (async () => {
-        const { client, connect } = transportFactory(meta.upstreamUrl);
+        const { client, connect } = transportFactory(meta);
         await connect();
         return client;
       })();

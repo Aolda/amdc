@@ -66,13 +66,28 @@ export type NativeHandler = (
   ctx: SessionContext,
 ) => Promise<ToolCallResult>;
 
-export interface UpstreamMcpMeta {
+export type UpstreamTransport = "http" | "stdio";
+
+interface UpstreamMcpMetaBase {
   name: string;
   kind: "upstream";
   description: string;
   defaultLevel: ToolLevel;
+}
+
+export interface UpstreamHttpMcpMeta extends UpstreamMcpMetaBase {
+  transport: "http";
   upstreamUrl: string;
 }
+
+export interface UpstreamStdioMcpMeta extends UpstreamMcpMetaBase {
+  transport: "stdio";
+  upstreamCommand: string[];
+  upstreamEnv?: Record<string, string>;
+  upstreamCwd?: string;
+}
+
+export type UpstreamMcpMeta = UpstreamHttpMcpMeta | UpstreamStdioMcpMeta;
 
 export interface CliMcpMeta {
   name: string;
