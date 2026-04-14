@@ -453,10 +453,10 @@ export function createMcpsRouter(
     }
     const resolvedKind = validation.kind;
     const resolvedTransport = validation.transport;
+    const name = body.name as string;
+    const defaultLevel = body.defaultLevel as ToolLevel;
     const {
-      name,
       description,
-      defaultLevel,
       upstreamUrl,
       upstreamCommand,
       upstreamEnv,
