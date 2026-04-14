@@ -110,7 +110,9 @@ function McpRow({
                       )}
                     </div>
                     <span className="flex items-center gap-1">
-                      <span className="text-muted-foreground">level</span>
+                      <span className="text-muted-foreground">
+                        default level
+                      </span>
                       <select
                         value={String(tool.level)}
                         onChange={(e) =>
@@ -217,7 +219,8 @@ export default function McpsPage() {
           <h1 className="text-2xl font-bold tracking-tight">MCPs</h1>
           <p className="text-sm text-muted-foreground">
             Tool providers wrapped by proxy_mcp. Native MCPs are read-only;
-            upstream MCPs are user-configurable. Expand a row to see its tools.
+            upstream MCPs are user-configurable. Expand a row to set each tool's
+            default level (agents can override with a custom level).
           </p>
         </div>
         <Link href="/mcps/new" className={buttonVariants()}>

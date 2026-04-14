@@ -54,7 +54,8 @@ function ToolRow({ tool, link, onChange }: ToolRowProps) {
           {tool.name}
         </span>
         <span className="text-muted-foreground">
-          default {tool.level} → effective {effective}
+          default {tool.level}
+          {overridden ? ` → custom ${effective}` : ""}
         </span>
       </div>
       <select
@@ -65,9 +66,9 @@ function ToolRow({ tool, link, onChange }: ToolRowProps) {
         }`}
       >
         <option value="default">default</option>
-        <option value="1">1</option>
-        <option value="2">2</option>
-        <option value="3">3</option>
+        <option value="1">{`1${tool.level === 1 ? " (default)" : ""}`}</option>
+        <option value="2">{`2${tool.level === 2 ? " (default)" : ""}`}</option>
+        <option value="3">{`3${tool.level === 3 ? " (default)" : ""}`}</option>
       </select>
     </div>
   );
@@ -340,7 +341,9 @@ export function AgentForm({ initialValues, onSubmit, submitLabel }: Props) {
                       {expanded ? "▾ tools" : "▸ tools"}
                     </button>
                     <span className="flex items-center gap-1 text-xs">
-                      <span className="text-muted-foreground">all tools:</span>
+                      <span className="text-muted-foreground">
+                        custom level (all tools):
+                      </span>
                       <select
                         value={bulkValue}
                         onChange={(e) =>
@@ -352,9 +355,9 @@ export function AgentForm({ initialValues, onSubmit, submitLabel }: Props) {
                         }`}
                       >
                         <option value="default">default</option>
-                        <option value="1">1</option>
-                        <option value="2">2</option>
-                        <option value="3">3</option>
+                        <option value="1">{`1${m.defaultLevel === 1 ? " (default)" : ""}`}</option>
+                        <option value="2">{`2${m.defaultLevel === 2 ? " (default)" : ""}`}</option>
+                        <option value="3">{`3${m.defaultLevel === 3 ? " (default)" : ""}`}</option>
                       </select>
                     </span>
                   </div>
