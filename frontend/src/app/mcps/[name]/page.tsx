@@ -10,6 +10,7 @@ import {
   type UpdateMcpInput,
 } from "@/lib/api";
 import { McpForm } from "@/components/mcp-form";
+import { McpToolsEditor } from "@/components/mcp-tools-editor";
 import { buttonVariants } from "@/components/ui/button";
 
 export default function EditMcpPage() {
@@ -61,6 +62,10 @@ export default function EditMcpPage() {
         submitLabel="Save"
         isEdit
       />
+
+      <div className="mt-10">
+        <McpToolsEditor mcpName={mcp.name} defaultLevel={mcp.defaultLevel} />
+      </div>
     </div>
   );
 }

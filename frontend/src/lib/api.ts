@@ -197,11 +197,41 @@ export interface Mcp {
   upstreamUrl?: string;
 }
 
+export type WrapperKind = "mcp" | "native" | "cli" | "script";
+
+export interface WrapperConfigPayload {
+  secrets?: Record<string, string>;
+  routing?: Record<string, Record<string, unknown>>;
+  fixedEnv?: Record<string, string>;
+  fixedParams?: Record<string, unknown>;
+  command?: string[];
+  commandPrefix?: string[];
+}
+
 export interface McpToolDefinition {
   name: string;
   description: string;
   level: ToolLevel;
+  wrapperName?: string;
+  underlyingToolName?: string | null;
+  kind?: WrapperKind;
+  hidden?: boolean;
+  inputSchema?: Record<string, unknown>;
+  config?: WrapperConfigPayload;
 }
+
+export interface CreateMcpToolInput {
+  wrapperName: string;
+  underlyingToolName?: string | null;
+  kind?: WrapperKind;
+  description?: string;
+  level?: ToolLevel;
+  hidden?: boolean;
+  inputSchema?: Record<string, unknown>;
+  config?: WrapperConfigPayload;
+}
+
+export type UpdateMcpToolInput = Partial<CreateMcpToolInput>;
 
 export async function fetchMcps(): Promise<Mcp[]> {
   const res = await fetch("/api/mcps");
@@ -220,15 +250,46 @@ export async function updateMcpToolLevel(
   toolName: string,
   level: ToolLevel,
 ): Promise<McpToolDefinition> {
+  return updateMcpTool(mcpName, toolName, { level });
+}
+
+export async function createMcpTool(
+  mcpName: string,
+  input: CreateMcpToolInput,
+): Promise<McpToolDefinition> {
+  const res = await fetch(`/api/mcps/${encodeURIComponent(mcpName)}/tools`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return handleResponse<McpToolDefinition>(res);
+}
+
+export async function updateMcpTool(
+  mcpName: string,
+  toolName: string,
+  input: UpdateMcpToolInput,
+): Promise<McpToolDefinition> {
   const res = await fetch(
     `/api/mcps/${encodeURIComponent(mcpName)}/tools/${encodeURIComponent(toolName)}`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ level }),
+      body: JSON.stringify(input),
     },
   );
   return handleResponse<McpToolDefinition>(res);
+}
+
+export async function deleteMcpTool(
+  mcpName: string,
+  toolName: string,
+): Promise<void> {
+  const res = await fetch(
+    `/api/mcps/${encodeURIComponent(mcpName)}/tools/${encodeURIComponent(toolName)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) throw new Error("Delete failed");
 }
 
 export interface CreateMcpInput {
