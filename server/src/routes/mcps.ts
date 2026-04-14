@@ -3,7 +3,12 @@ import { eq } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { mcps as mcpsTable } from "../db/schema.js";
 import type { McpRegistry } from "../mcp/mcp-registry.js";
-import type { ToolLevel, UpstreamMcpMeta } from "../mcp/types.js";
+import type {
+  CliMcpMeta,
+  McpKind,
+  ToolLevel,
+  UpstreamMcpMeta,
+} from "../mcp/types.js";
 import { upsertMcpToolLevel } from "../mcp/mcp-sync.js";
 import type { WrapperConfig, WrapperKind, WrapperRow } from "../mcp/wrapper.js";
 import {
@@ -304,25 +309,38 @@ export function createMcpsRouter(
   });
 
   router.post("/", async (req, res) => {
-    const { name, description, defaultLevel, upstreamUrl } = req.body as {
+    const { name, description, defaultLevel, upstreamUrl, kind } = req.body as {
       name?: string;
       description?: string;
       defaultLevel?: number;
       upstreamUrl?: string;
+      kind?: McpKind;
     };
+    const resolvedKind: McpKind = kind ?? "upstream";
+    if (resolvedKind !== "upstream" && resolvedKind !== "cli") {
+      res
+        .status(400)
+        .json({ error: { message: "kind must be upstream or cli" } });
+      return;
+    }
     if (
       !name ||
       typeof name !== "string" ||
-      !upstreamUrl ||
-      typeof upstreamUrl !== "string" ||
       defaultLevel === undefined ||
       ![1, 2, 3].includes(defaultLevel)
     ) {
       res.status(400).json({
-        error: {
-          message: "name, upstreamUrl, defaultLevel(1|2|3) required",
-        },
+        error: { message: "name and defaultLevel(1|2|3) required" },
       });
+      return;
+    }
+    if (
+      resolvedKind === "upstream" &&
+      (!upstreamUrl || typeof upstreamUrl !== "string")
+    ) {
+      res
+        .status(400)
+        .json({ error: { message: "upstreamUrl required for upstream kind" } });
       return;
     }
     const existing = await db
@@ -338,30 +356,39 @@ export function createMcpsRouter(
     const now = new Date().toISOString();
     await db.insert(mcpsTable).values({
       name,
-      kind: "upstream",
+      kind: resolvedKind,
       description: description ?? "",
       defaultLevel,
-      metadata: JSON.stringify({ upstreamUrl }),
+      metadata:
+        resolvedKind === "upstream" ? JSON.stringify({ upstreamUrl }) : "{}",
       createdAt: now,
       updatedAt: now,
     });
     if (registry) {
-      const meta: UpstreamMcpMeta = {
-        name,
-        kind: "upstream",
-        description: description ?? "",
-        defaultLevel: defaultLevel as 1 | 2 | 3,
-        upstreamUrl,
-      };
+      const meta: UpstreamMcpMeta | CliMcpMeta =
+        resolvedKind === "upstream"
+          ? {
+              name,
+              kind: "upstream",
+              description: description ?? "",
+              defaultLevel: defaultLevel as ToolLevel,
+              upstreamUrl: upstreamUrl ?? "",
+            }
+          : {
+              name,
+              kind: "cli",
+              description: description ?? "",
+              defaultLevel: defaultLevel as ToolLevel,
+            };
       registry.addMcp(meta);
     }
     res.status(201).json({
       data: {
         name,
-        kind: "upstream",
+        kind: resolvedKind,
         description: description ?? "",
         defaultLevel,
-        upstreamUrl,
+        upstreamUrl: resolvedKind === "upstream" ? upstreamUrl : undefined,
       },
     });
   });
@@ -376,7 +403,7 @@ export function createMcpsRouter(
       res.status(404).json({ error: { message: "mcp not found" } });
       return;
     }
-    if (existing.kind !== "upstream") {
+    if (existing.kind === "native") {
       res.status(403).json({ error: { message: "native mcp is read-only" } });
       return;
     }
@@ -394,10 +421,14 @@ export function createMcpsRouter(
         .json({ error: { message: "defaultLevel must be 1|2|3" } });
       return;
     }
-    const nextMetadata = JSON.stringify({
-      upstreamUrl:
-        upstreamUrl ?? parseUpstreamMetadata(existing.metadata).upstreamUrl,
-    });
+    const nextMetadata =
+      existing.kind === "upstream"
+        ? JSON.stringify({
+            upstreamUrl:
+              upstreamUrl ??
+              parseUpstreamMetadata(existing.metadata).upstreamUrl,
+          })
+        : existing.metadata;
     await db
       .update(mcpsTable)
       .set({
@@ -409,21 +440,33 @@ export function createMcpsRouter(
       .where(eq(mcpsTable.name, existing.name));
     if (registry) {
       registry.removeMcp(existing.name);
-      registry.addMcp({
-        name: existing.name,
-        kind: "upstream",
-        description: nextDescription,
-        defaultLevel: nextDefaultLevel as 1 | 2 | 3,
-        upstreamUrl: parseUpstreamMetadata(nextMetadata).upstreamUrl,
-      });
+      const meta: UpstreamMcpMeta | CliMcpMeta =
+        existing.kind === "upstream"
+          ? {
+              name: existing.name,
+              kind: "upstream",
+              description: nextDescription,
+              defaultLevel: nextDefaultLevel as ToolLevel,
+              upstreamUrl: parseUpstreamMetadata(nextMetadata).upstreamUrl,
+            }
+          : {
+              name: existing.name,
+              kind: "cli",
+              description: nextDescription,
+              defaultLevel: nextDefaultLevel as ToolLevel,
+            };
+      registry.addMcp(meta);
     }
     res.json({
       data: {
         name: existing.name,
-        kind: "upstream",
+        kind: existing.kind,
         description: nextDescription,
         defaultLevel: nextDefaultLevel,
-        upstreamUrl: parseUpstreamMetadata(nextMetadata).upstreamUrl,
+        upstreamUrl:
+          existing.kind === "upstream"
+            ? parseUpstreamMetadata(nextMetadata).upstreamUrl
+            : undefined,
       },
     });
   });
@@ -438,7 +481,7 @@ export function createMcpsRouter(
       res.status(404).json({ error: { message: "mcp not found" } });
       return;
     }
-    if (existing.kind !== "upstream") {
+    if (existing.kind === "native") {
       res.status(403).json({ error: { message: "native mcp is read-only" } });
       return;
     }

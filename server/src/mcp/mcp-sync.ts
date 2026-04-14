@@ -1,7 +1,12 @@
 import { and, eq, ne } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { mcps, mcpTools } from "../db/schema.js";
-import type { McpMeta, ToolLevel, UpstreamMcpMeta } from "./types.js";
+import type {
+  CliMcpMeta,
+  McpMeta,
+  ToolLevel,
+  UpstreamMcpMeta,
+} from "./types.js";
 
 function metadataFor(meta: McpMeta): string {
   if (meta.kind === "upstream") {
@@ -122,4 +127,14 @@ export async function loadUpstreamMcpsFromDb(
     });
   }
   return result;
+}
+
+export async function loadCliMcpsFromDb(db: DB): Promise<CliMcpMeta[]> {
+  const rows = await db.select().from(mcps).where(eq(mcps.kind, "cli"));
+  return rows.map((row) => ({
+    name: row.name,
+    kind: "cli" as const,
+    description: row.description,
+    defaultLevel: row.defaultLevel as ToolLevel,
+  }));
 }

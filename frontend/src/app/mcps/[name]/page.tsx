@@ -34,7 +34,7 @@ export default function EditMcpPage() {
     return <p className="text-muted-foreground">Loading...</p>;
   }
 
-  if (mcp.kind !== "upstream") {
+  if (mcp.kind === "native") {
     return (
       <div className="mx-auto max-w-5xl">
         <p className="text-sm text-destructive">

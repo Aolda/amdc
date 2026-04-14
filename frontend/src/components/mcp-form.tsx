@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   type CreateMcpInput,
   type Mcp,
+  type McpKind,
   type ToolLevel,
   type UpdateMcpInput,
 } from "@/lib/api";
@@ -25,6 +26,9 @@ export function McpForm({
   isEdit,
 }: Props) {
   const [name, setName] = useState(initialValues?.name ?? "");
+  const [kind, setKind] = useState<McpKind>(
+    (initialValues?.kind as McpKind | undefined) ?? "upstream",
+  );
   const [description, setDescription] = useState(
     initialValues?.description ?? "",
   );
@@ -46,14 +50,15 @@ export function McpForm({
         await onSubmit({
           description,
           defaultLevel,
-          upstreamUrl,
+          ...(kind === "upstream" ? { upstreamUrl } : {}),
         });
       } else {
         await onSubmit({
           name,
+          kind,
           description,
           defaultLevel,
-          upstreamUrl,
+          ...(kind === "upstream" ? { upstreamUrl } : {}),
         });
       }
     } catch (err) {
@@ -80,6 +85,24 @@ export function McpForm({
       </div>
 
       <div className="space-y-2">
+        <Label htmlFor="kind">Kind</Label>
+        <select
+          id="kind"
+          value={kind}
+          onChange={(e) => setKind(e.target.value as McpKind)}
+          disabled={isEdit}
+          className="w-full rounded-md border bg-background px-3 py-2 text-sm disabled:opacity-60"
+        >
+          <option value="upstream">
+            upstream — proxies a remote MCP server
+          </option>
+          <option value="cli">
+            cli — AMDC-local wrappers around shell commands
+          </option>
+        </select>
+      </div>
+
+      <div className="space-y-2">
         <Label htmlFor="description">Description</Label>
         <Input
           id="description"
@@ -89,16 +112,18 @@ export function McpForm({
         />
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="upstreamUrl">Upstream MCP URL</Label>
-        <Input
-          id="upstreamUrl"
-          value={upstreamUrl}
-          onChange={(e) => setUpstreamUrl(e.target.value)}
-          placeholder="https://example.com/mcp"
-          required
-        />
-      </div>
+      {kind === "upstream" && (
+        <div className="space-y-2">
+          <Label htmlFor="upstreamUrl">Upstream MCP URL</Label>
+          <Input
+            id="upstreamUrl"
+            value={upstreamUrl}
+            onChange={(e) => setUpstreamUrl(e.target.value)}
+            placeholder="https://example.com/mcp"
+            required
+          />
+        </div>
+      )}
 
       <div className="space-y-2">
         <Label htmlFor="defaultLevel">Default level</Label>

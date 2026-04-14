@@ -38,7 +38,7 @@ function McpRow({
   onDelete,
   onToolLevelChange,
 }: McpRowProps) {
-  const isUpstream = mcp.kind === "upstream";
+  const isEditable = mcp.kind === "upstream" || mcp.kind === "cli";
   return (
     <>
       <TableRow>
@@ -65,7 +65,7 @@ function McpRow({
         </TableCell>
         <TableCell className="text-right">
           <div className="flex justify-end gap-2">
-            {isUpstream ? (
+            {isEditable ? (
               <>
                 <Link
                   href={`/mcps/${encodeURIComponent(mcp.name)}`}
@@ -224,7 +224,7 @@ export default function McpsPage() {
           </p>
         </div>
         <Link href="/mcps/new" className={buttonVariants()}>
-          + New Upstream MCP
+          + New MCP
         </Link>
       </div>
 

@@ -7,7 +7,7 @@ export interface SessionContext {
   environment?: Environment;
 }
 
-export type McpKind = "native" | "upstream";
+export type McpKind = "native" | "upstream" | "cli";
 
 export type ToolLevel = 1 | 2 | 3;
 
@@ -74,7 +74,14 @@ export interface UpstreamMcpMeta {
   upstreamUrl: string;
 }
 
-export type McpMeta = NativeMcpMeta | UpstreamMcpMeta;
+export interface CliMcpMeta {
+  name: string;
+  kind: "cli";
+  description: string;
+  defaultLevel: ToolLevel;
+}
+
+export type McpMeta = NativeMcpMeta | UpstreamMcpMeta | CliMcpMeta;
 
 export interface PermissionDecision {
   allowed: boolean;

@@ -7,6 +7,7 @@ import { createMcpRegistry } from "./mcp/mcp-registry.js";
 import { AgentDefaultPermissionChecker } from "./mcp/permission.js";
 import {
   fetchMcpToolLevels,
+  loadCliMcpsFromDb,
   loadUpstreamMcpsFromDb,
   seedNativeToolLevels,
   syncMcpsToDb,
@@ -28,9 +29,11 @@ async function main() {
   await syncMcpsToDb(db, nativeMcpMetas);
   await seedNativeToolLevels(db, nativeMcpMetas);
   const upstreamMcpMetas = await loadUpstreamMcpsFromDb(db);
+  const cliMcpMetas = await loadCliMcpsFromDb(db);
   const mcpRegistry = createMcpRegistry([
     ...nativeMcpMetas,
     ...upstreamMcpMetas,
+    ...cliMcpMetas,
   ]);
   const sessionRegistry = createSessionRegistry();
   const permissionChecker = new AgentDefaultPermissionChecker({

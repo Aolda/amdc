@@ -3,6 +3,7 @@ import {
   type UpstreamTransportFactory,
 } from "./plugins/mcp-upstream/factory.js";
 import type {
+  CliMcpMeta,
   Mcp,
   McpMeta,
   NativeHandler,
@@ -58,11 +59,35 @@ function buildNativeMcp(meta: NativeMcpMeta): Mcp {
   };
 }
 
+function buildCliMcp(meta: CliMcpMeta): Mcp {
+  return {
+    name: meta.name,
+    kind: "cli",
+    description: meta.description,
+    defaultLevel: meta.defaultLevel,
+    async listTools(): Promise<ToolDefinition[]> {
+      return [];
+    },
+    async callTool(): Promise<ToolCallResult> {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `cli mcp '${meta.name}' must be dispatched via wrapper row`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  };
+}
+
 function buildMcp(
   meta: McpMeta,
   upstreamTransportFactory?: UpstreamTransportFactory,
 ): Mcp {
   if (meta.kind === "native") return buildNativeMcp(meta);
+  if (meta.kind === "cli") return buildCliMcp(meta);
   return buildUpstreamMcp(meta, upstreamTransportFactory);
 }
 

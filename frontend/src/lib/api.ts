@@ -292,11 +292,14 @@ export async function deleteMcpTool(
   if (!res.ok) throw new Error("Delete failed");
 }
 
+export type McpKind = "upstream" | "cli" | "native";
+
 export interface CreateMcpInput {
   name: string;
+  kind?: McpKind;
   description?: string;
   defaultLevel: ToolLevel;
-  upstreamUrl: string;
+  upstreamUrl?: string;
 }
 
 export interface UpdateMcpInput {

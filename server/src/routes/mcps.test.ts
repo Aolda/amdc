@@ -148,6 +148,40 @@ describe("PUT /api/mcps/:name", () => {
   });
 });
 
+describe("POST /api/mcps with kind=cli", () => {
+  it("creates a cli kind mcp without upstreamUrl", async () => {
+    const res = await request(app).post("/api/mcps").send({
+      name: "amdb_cli",
+      kind: "cli",
+      description: "AMDB CLI wrappers",
+      defaultLevel: 2,
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.data).toMatchObject({
+      name: "amdb_cli",
+      kind: "cli",
+      defaultLevel: 2,
+    });
+  });
+
+  it("rejects cli kind if caller still sends invalid fields", async () => {
+    const res = await request(app).post("/api/mcps").send({
+      name: "bad",
+      kind: "cli",
+      defaultLevel: 7,
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("upstream kind still requires upstreamUrl", async () => {
+    const res = await request(app).post("/api/mcps").send({
+      name: "u_no_url",
+      defaultLevel: 2,
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("POST /api/mcps/:name/tools", () => {
   it("creates a new wrapper row", async () => {
     const res = await request(app)
