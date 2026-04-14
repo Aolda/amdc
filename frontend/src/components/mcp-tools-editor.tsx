@@ -13,6 +13,68 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+interface ToolRowProps {
+  tool: McpToolDefinition;
+  onLevel: (level: ToolLevel) => void;
+  onHidden: (hidden: boolean) => void;
+  onDescription: (description: string) => void;
+  onDelete: () => void;
+}
+
+function ToolRow({
+  tool,
+  onLevel,
+  onHidden,
+  onDescription,
+  onDelete,
+}: ToolRowProps) {
+  const [draft, setDraft] = useState(tool.description);
+  useEffect(() => {
+    setDraft(tool.description);
+  }, [tool.description]);
+  return (
+    <tr className="border-t">
+      <td className="p-2 font-mono">{tool.name}</td>
+      <td className="p-2 font-mono text-muted-foreground">
+        {tool.underlyingToolName ?? "—"}
+      </td>
+      <td className="p-2">
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            if (draft !== tool.description) onDescription(draft);
+          }}
+          className="h-7 text-xs"
+        />
+      </td>
+      <td className="p-2">
+        <select
+          value={tool.level}
+          onChange={(e) => onLevel(Number(e.target.value) as ToolLevel)}
+          className="rounded-md border bg-background px-2 py-1 text-xs"
+        >
+          <option value={1}>1</option>
+          <option value={2}>2</option>
+          <option value={3}>3</option>
+        </select>
+      </td>
+      <td className="p-2">
+        <input
+          type="checkbox"
+          checked={tool.hidden ?? false}
+          onChange={(e) => onHidden(e.target.checked)}
+        />
+      </td>
+      <td className="p-2 text-right">
+        <Button variant="destructive" size="sm" onClick={onDelete}>
+          Delete
+        </Button>
+      </td>
+    </tr>
+  );
+}
+
 interface Props {
   mcpName: string;
   defaultLevel: ToolLevel;
@@ -168,57 +230,16 @@ export function McpToolsEditor({ mcpName, defaultLevel }: Props) {
             </thead>
             <tbody>
               {tools.map((tool) => (
-                <tr key={tool.name} className="border-t">
-                  <td className="p-2 font-mono">{tool.name}</td>
-                  <td className="p-2 font-mono text-muted-foreground">
-                    {tool.underlyingToolName ?? "—"}
-                  </td>
-                  <td className="p-2">
-                    <Input
-                      defaultValue={tool.description}
-                      onBlur={(e) => {
-                        if (e.target.value !== tool.description) {
-                          void handleDescription(tool.name, e.target.value);
-                        }
-                      }}
-                      className="h-7 text-xs"
-                    />
-                  </td>
-                  <td className="p-2">
-                    <select
-                      value={tool.level}
-                      onChange={(e) =>
-                        void handleLevel(
-                          tool.name,
-                          Number(e.target.value) as ToolLevel,
-                        )
-                      }
-                      className="rounded-md border bg-background px-2 py-1 text-xs"
-                    >
-                      <option value={1}>1</option>
-                      <option value={2}>2</option>
-                      <option value={3}>3</option>
-                    </select>
-                  </td>
-                  <td className="p-2">
-                    <input
-                      type="checkbox"
-                      checked={tool.hidden ?? false}
-                      onChange={(e) =>
-                        void handleHidden(tool.name, e.target.checked)
-                      }
-                    />
-                  </td>
-                  <td className="p-2 text-right">
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => void handleDelete(tool.name)}
-                    >
-                      Delete
-                    </Button>
-                  </td>
-                </tr>
+                <ToolRow
+                  key={tool.name}
+                  tool={tool}
+                  onLevel={(level) => void handleLevel(tool.name, level)}
+                  onHidden={(hidden) => void handleHidden(tool.name, hidden)}
+                  onDescription={(desc) =>
+                    void handleDescription(tool.name, desc)
+                  }
+                  onDelete={() => void handleDelete(tool.name)}
+                />
               ))}
             </tbody>
           </table>
