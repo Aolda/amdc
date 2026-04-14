@@ -64,7 +64,11 @@ export default function EditMcpPage() {
       />
 
       <div className="mt-10">
-        <McpToolsEditor mcpName={mcp.name} defaultLevel={mcp.defaultLevel} />
+        <McpToolsEditor
+          mcpName={mcp.name}
+          mcpKind={mcp.kind}
+          defaultLevel={mcp.defaultLevel}
+        />
       </div>
     </div>
   );

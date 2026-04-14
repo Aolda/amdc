@@ -77,6 +77,7 @@ function ToolRow({
 
 interface Props {
   mcpName: string;
+  mcpKind: string;
   defaultLevel: ToolLevel;
 }
 
@@ -120,7 +121,8 @@ function parseFixedParams(raw: string): {
   }
 }
 
-export function McpToolsEditor({ mcpName, defaultLevel }: Props) {
+export function McpToolsEditor({ mcpName, mcpKind, defaultLevel }: Props) {
+  const supportsUnderlying = mcpKind === "upstream" || mcpKind === "native";
   const [tools, setTools] = useState<McpToolDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -171,6 +173,16 @@ export function McpToolsEditor({ mcpName, defaultLevel }: Props) {
     refresh();
   }
 
+  const underlyingOptions = (() => {
+    if (!supportsUnderlying) return [] as string[];
+    const set = new Set<string>();
+    for (const tool of tools) {
+      if (tool.underlyingToolName) set.add(tool.underlyingToolName);
+      if (tool.kind === "mcp" && tool.wrapperName) set.add(tool.wrapperName);
+    }
+    return Array.from(set).sort();
+  })();
+
   async function handleCreate() {
     setError(null);
     const parsed = parseFixedParams(draft.fixedParams);
@@ -180,6 +192,10 @@ export function McpToolsEditor({ mcpName, defaultLevel }: Props) {
     }
     if (!draft.wrapperName.trim()) {
       setError("wrapperName is required");
+      return;
+    }
+    if (supportsUnderlying && !draft.underlyingToolName) {
+      setError("pick an underlying tool to wrap");
       return;
     }
     setCreating(true);
@@ -259,16 +275,28 @@ export function McpToolsEditor({ mcpName, defaultLevel }: Props) {
               placeholder="cpu_usage"
             />
           </div>
-          <div className="space-y-1">
-            <Label>underlyingToolName</Label>
-            <Input
-              value={draft.underlyingToolName}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, underlyingToolName: e.target.value }))
-              }
-              placeholder="query_prometheus (leave blank for cli/script)"
-            />
-          </div>
+          {supportsUnderlying && (
+            <div className="space-y-1">
+              <Label>underlying tool (to wrap)</Label>
+              <select
+                value={draft.underlyingToolName}
+                onChange={(e) =>
+                  setDraft((d) => ({
+                    ...d,
+                    underlyingToolName: e.target.value,
+                  }))
+                }
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              >
+                <option value="">— select a tool to wrap —</option>
+                {underlyingOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="space-y-1 col-span-2">
             <Label>description</Label>
             <Input
