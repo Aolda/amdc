@@ -5,6 +5,13 @@ import { mcps as mcpsTable } from "../db/schema.js";
 import type { McpRegistry } from "../mcp/mcp-registry.js";
 import type { ToolLevel, UpstreamMcpMeta } from "../mcp/types.js";
 import { fetchMcpToolLevels, upsertMcpToolLevel } from "../mcp/mcp-sync.js";
+import type { WrapperConfig, WrapperKind, WrapperRow } from "../mcp/wrapper.js";
+import {
+  deleteWrapperRow,
+  fetchWrapperRow,
+  insertWrapperRow,
+  updateWrapperRow,
+} from "../mcp/wrapper-repository.js";
 
 interface UpstreamMetadata {
   upstreamUrl: string;
@@ -20,6 +27,95 @@ function parseUpstreamMetadata(value: string): UpstreamMetadata {
   } catch {
     return { upstreamUrl: "" };
   }
+}
+
+interface WrapperRowPayload {
+  wrapperName?: string;
+  underlyingToolName?: string | null;
+  kind?: WrapperKind;
+  level?: number;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+  hidden?: boolean;
+  config?: WrapperConfig;
+}
+
+const WRAPPER_KINDS: ReadonlySet<WrapperKind> = new Set([
+  "mcp",
+  "native",
+  "cli",
+  "script",
+]);
+
+function validateWrapperPayload(
+  body: Partial<WrapperRowPayload>,
+  { partial }: { partial: boolean },
+): { error?: string } {
+  if (body.level !== undefined && ![1, 2, 3].includes(body.level)) {
+    return { error: "level must be 1|2|3" };
+  }
+  if (body.kind !== undefined && !WRAPPER_KINDS.has(body.kind)) {
+    return { error: "kind must be mcp|native|cli|script" };
+  }
+  if (!partial && body.level === undefined) {
+    // level is optional on create (falls back to mcp.defaultLevel), so no error
+  }
+  return {};
+}
+
+function mergeWrapperPayload(
+  base: WrapperRow,
+  body: Partial<WrapperRowPayload>,
+): WrapperRow {
+  return {
+    ...base,
+    underlyingToolName:
+      body.underlyingToolName !== undefined
+        ? body.underlyingToolName
+        : base.underlyingToolName,
+    kind: body.kind ?? base.kind,
+    level: (body.level ?? base.level) as ToolLevel,
+    description: body.description ?? base.description,
+    inputSchema: body.inputSchema ?? base.inputSchema,
+    hidden: body.hidden ?? base.hidden,
+    config: body.config ?? base.config,
+  };
+}
+
+function seedWrapperFromBaseline(
+  mcpName: string,
+  wrapperName: string,
+  baseline: {
+    description: string;
+    inputSchema: Record<string, unknown>;
+    level: ToolLevel;
+  },
+): WrapperRow {
+  return {
+    mcpName,
+    wrapperName,
+    underlyingToolName: wrapperName,
+    kind: "mcp",
+    level: baseline.level,
+    description: "",
+    inputSchema: {},
+    hidden: false,
+    config: {},
+  };
+}
+
+function wrapperRowToJson(row: WrapperRow): Record<string, unknown> {
+  return {
+    name: row.wrapperName,
+    wrapperName: row.wrapperName,
+    underlyingToolName: row.underlyingToolName,
+    kind: row.kind,
+    level: row.level,
+    description: row.description,
+    inputSchema: row.inputSchema,
+    hidden: row.hidden,
+    config: row.config,
+  };
 }
 
 export function createMcpsRouter(
@@ -83,30 +179,103 @@ export function createMcpsRouter(
       res.status(404).json({ error: { message: "mcp not found" } });
       return;
     }
-    const { level } = req.body as { level?: number };
-    if (level === undefined || ![1, 2, 3].includes(level)) {
-      res.status(400).json({ error: { message: "level must be 1|2|3" } });
-      return;
-    }
-    const tools = await mcp.listTools();
-    const found = tools.find((t) => t.name === req.params.toolName);
-    if (!found) {
-      res.status(404).json({ error: { message: "tool not found" } });
-      return;
-    }
-    await upsertMcpToolLevel(
+    const existing = await fetchWrapperRow(
       db,
       req.params.name,
       req.params.toolName,
-      level as ToolLevel,
     );
-    res.json({
-      data: {
-        name: found.name,
-        description: found.description,
-        level,
-      },
-    });
+    const fromBaseline = existing
+      ? undefined
+      : (await mcp.listTools()).find((t) => t.name === req.params.toolName);
+    if (!existing && !fromBaseline) {
+      res.status(404).json({ error: { message: "tool not found" } });
+      return;
+    }
+    const body = req.body as Partial<WrapperRowPayload>;
+    const validation = validateWrapperPayload(body, { partial: true });
+    if (validation.error) {
+      res.status(400).json({ error: { message: validation.error } });
+      return;
+    }
+    const base =
+      existing ??
+      seedWrapperFromBaseline(
+        req.params.name,
+        req.params.toolName,
+        fromBaseline as {
+          description: string;
+          inputSchema: Record<string, unknown>;
+          level: ToolLevel;
+        },
+      );
+    const merged = mergeWrapperPayload(base, body);
+    if (existing) {
+      await updateWrapperRow(db, merged);
+    } else {
+      await insertWrapperRow(db, merged);
+    }
+    res.json({ data: wrapperRowToJson(merged) });
+  });
+
+  router.post("/:name/tools", async (req, res) => {
+    const mcpRow = await db
+      .select()
+      .from(mcpsTable)
+      .where(eq(mcpsTable.name, req.params.name));
+    if (!mcpRow[0]) {
+      res.status(404).json({ error: { message: "mcp not found" } });
+      return;
+    }
+    const body = req.body as Partial<WrapperRowPayload>;
+    const validation = validateWrapperPayload(body, { partial: false });
+    if (validation.error) {
+      res.status(400).json({ error: { message: validation.error } });
+      return;
+    }
+    if (!body.wrapperName) {
+      res.status(400).json({ error: { message: "wrapperName required" } });
+      return;
+    }
+    const existing = await fetchWrapperRow(
+      db,
+      req.params.name,
+      body.wrapperName,
+    );
+    if (existing) {
+      res.status(409).json({
+        error: { message: "wrapper with that name already exists" },
+      });
+      return;
+    }
+    const defaultKind: WrapperKind =
+      mcpRow[0].kind === "upstream" ? "mcp" : (mcpRow[0].kind as WrapperKind);
+    const row: WrapperRow = {
+      mcpName: req.params.name,
+      wrapperName: body.wrapperName,
+      underlyingToolName: body.underlyingToolName ?? null,
+      kind: body.kind ?? defaultKind,
+      level: (body.level ?? mcpRow[0].defaultLevel) as ToolLevel,
+      description: body.description ?? "",
+      inputSchema: body.inputSchema ?? {},
+      hidden: body.hidden ?? false,
+      config: body.config ?? {},
+    };
+    await insertWrapperRow(db, row);
+    res.status(201).json({ data: wrapperRowToJson(row) });
+  });
+
+  router.delete("/:name/tools/:toolName", async (req, res) => {
+    const existing = await fetchWrapperRow(
+      db,
+      req.params.name,
+      req.params.toolName,
+    );
+    if (!existing) {
+      res.status(404).json({ error: { message: "tool not found" } });
+      return;
+    }
+    await deleteWrapperRow(db, req.params.name, req.params.toolName);
+    res.status(204).send();
   });
 
   router.post("/", async (req, res) => {

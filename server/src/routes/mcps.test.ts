@@ -148,6 +148,82 @@ describe("PUT /api/mcps/:name", () => {
   });
 });
 
+describe("POST /api/mcps/:name/tools", () => {
+  it("creates a new wrapper row", async () => {
+    const res = await request(app)
+      .post("/api/mcps/echo/tools")
+      .send({
+        wrapperName: "echo_shout",
+        underlyingToolName: "echo",
+        description: "loud echo",
+        level: 2,
+        config: { fixedParams: { prefix: "!!! " } },
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.data).toMatchObject({
+      name: "echo_shout",
+      wrapperName: "echo_shout",
+      underlyingToolName: "echo",
+      level: 2,
+      hidden: false,
+    });
+    expect(res.body.data.config.fixedParams).toEqual({ prefix: "!!! " });
+  });
+
+  it("returns 409 on duplicate wrapperName", async () => {
+    await request(app)
+      .post("/api/mcps/echo/tools")
+      .send({ wrapperName: "x", level: 3 });
+    const res = await request(app)
+      .post("/api/mcps/echo/tools")
+      .send({ wrapperName: "x", level: 3 });
+    expect(res.status).toBe(409);
+  });
+
+  it("returns 400 for invalid level", async () => {
+    const res = await request(app)
+      .post("/api/mcps/echo/tools")
+      .send({ wrapperName: "bad", level: 9 });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 for unknown mcp", async () => {
+    const res = await request(app)
+      .post("/api/mcps/nope/tools")
+      .send({ wrapperName: "x", level: 3 });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("PUT /api/mcps/:name/tools/:toolName (full update)", () => {
+  it("updates description and hidden on an existing wrapper", async () => {
+    await request(app)
+      .post("/api/mcps/echo/tools")
+      .send({ wrapperName: "shout", underlyingToolName: "echo", level: 3 });
+    const res = await request(app)
+      .put("/api/mcps/echo/tools/shout")
+      .send({ description: "updated", hidden: true });
+    expect(res.status).toBe(200);
+    expect(res.body.data.description).toBe("updated");
+    expect(res.body.data.hidden).toBe(true);
+  });
+});
+
+describe("DELETE /api/mcps/:name/tools/:toolName", () => {
+  it("deletes an existing wrapper row", async () => {
+    await request(app)
+      .post("/api/mcps/echo/tools")
+      .send({ wrapperName: "temp", level: 3 });
+    const del = await request(app).delete("/api/mcps/echo/tools/temp");
+    expect(del.status).toBe(204);
+  });
+
+  it("returns 404 for missing wrapper", async () => {
+    const res = await request(app).delete("/api/mcps/echo/tools/ghost");
+    expect(res.status).toBe(404);
+  });
+});
+
 describe("DELETE /api/mcps/:name", () => {
   it("deletes an upstream mcp", async () => {
     await request(app).post("/api/mcps").send({
