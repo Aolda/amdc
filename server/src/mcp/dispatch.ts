@@ -2,8 +2,8 @@ import type { DB } from "../db/index.js";
 import type { McpRegistry } from "./mcp-registry.js";
 import type {
   Mcp,
+  PermissionChecker,
   SessionContext,
-  ToolCallResult,
   ToolDefinition,
 } from "./types.js";
 import {
@@ -12,7 +12,16 @@ import {
   type WrapperRow,
 } from "./wrapper.js";
 import { fetchMcpConfig, fetchWrapperRows } from "./wrapper-repository.js";
-import { runCliTool } from "./plugins/cli/runner.js";
+import {
+  composeMiddleware,
+  type ToolCallContext,
+  type ToolCallNext,
+} from "./middleware/types.js";
+import { authMiddleware } from "./middleware/auth.js";
+import { envMiddleware } from "./middleware/env.js";
+import { fixedParamsMiddleware } from "./middleware/fixed-params.js";
+import { secretMaskMiddleware } from "./middleware/secret-mask.js";
+import { logMiddleware } from "./middleware/log.js";
 
 export interface ComposedTool {
   mcp: Mcp;
@@ -57,34 +66,49 @@ export async function resolveComposedTool(
   return null;
 }
 
-function applyFixedParams(
-  input: Record<string, unknown>,
-  fixed: Record<string, unknown> | undefined,
-): Record<string, unknown> {
-  if (!fixed) return input;
-  return { ...input, ...fixed };
+export async function buildToolCallContext(
+  db: DB,
+  tool: ComposedTool,
+  rawInput: unknown,
+  session: SessionContext,
+): Promise<ToolCallContext> {
+  const mcpConfig = await fetchMcpConfig(db, tool.mcp.name);
+  const rowConfig = tool.row?.config ?? {};
+  const mergedConfig = mergeWrapperConfig(mcpConfig, rowConfig);
+  const input = (rawInput ?? {}) as Record<string, unknown>;
+  return {
+    session,
+    tool,
+    input,
+    mergedConfig,
+    namespaces: {
+      input: input as Record<string, string | number | boolean | undefined>,
+    },
+  };
 }
 
-export async function dispatchComposedCall(
-  db: DB,
-  resolved: ComposedTool,
-  rawInput: unknown,
-  ctx: SessionContext,
-): Promise<ToolCallResult> {
-  const input = (rawInput ?? {}) as Record<string, unknown>;
-  const mcpConfig = await fetchMcpConfig(db, resolved.mcp.name);
-  const rowConfig = resolved.row?.config ?? {};
-  const mergedConfig = mergeWrapperConfig(mcpConfig, rowConfig);
-  const enrichedInput = applyFixedParams(input, mergedConfig.fixedParams);
-  const kind = resolved.row?.kind;
-  if (kind === "cli" && resolved.row) {
-    return runCliTool(
-      { ...resolved.row, config: mergedConfig },
-      enrichedInput,
-      ctx,
-    );
-  }
-  const underlyingName =
-    resolved.row?.underlyingToolName ?? resolved.definition.name;
-  return resolved.mcp.callTool(underlyingName, enrichedInput, ctx);
+export function createDispatchFinal(): ToolCallNext {
+  return async (ctx) => {
+    const { tool, input, session, mergedConfig } = ctx;
+    const kind = tool.row?.kind;
+    if (kind === "cli" && tool.row) {
+      const { runCliTool } = await import("./plugins/cli/runner.js");
+      return runCliTool({ ...tool.row, config: mergedConfig }, input, session);
+    }
+    const underlyingName = tool.row?.underlyingToolName ?? tool.definition.name;
+    return tool.mcp.callTool(underlyingName, input, session);
+  };
+}
+
+export function createPipeline(checker: PermissionChecker): ToolCallNext {
+  return composeMiddleware(
+    [
+      authMiddleware(checker),
+      envMiddleware(),
+      fixedParamsMiddleware(),
+      secretMaskMiddleware(),
+      logMiddleware(),
+    ],
+    createDispatchFinal(),
+  );
 }

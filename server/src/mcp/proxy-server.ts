@@ -8,8 +8,9 @@ import type { DB } from "../db/index.js";
 import type { McpRegistry } from "./mcp-registry.js";
 import type { PermissionChecker, SessionContext } from "./types.js";
 import {
+  buildToolCallContext,
   composeAllTools,
-  dispatchComposedCall,
+  createPipeline,
   resolveComposedTool,
 } from "./dispatch.js";
 
@@ -23,6 +24,8 @@ export function createProxyMcpServer(
     { name: "amdc-proxy-mcp", version: "0.1.0" },
     { capabilities: { tools: {} } },
   );
+
+  const pipeline = createPipeline(permissionChecker);
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const entries = await composeAllTools(db, registry);
@@ -55,24 +58,13 @@ export function createProxyMcpServer(
         isError: true,
       };
     }
-    const decision = await permissionChecker.check(
-      ctx,
-      resolved.mcp,
-      resolved.definition,
-    );
-    if (!decision.allowed) {
-      const suffix = decision.reason ? ": " + decision.reason : "";
-      return {
-        content: [{ type: "text", text: "permission denied" + suffix }],
-        isError: true,
-      };
-    }
-    const result = await dispatchComposedCall(
+    const callCtx = await buildToolCallContext(
       db,
       resolved,
       request.params.arguments ?? {},
       ctx,
     );
+    const result = await pipeline(callCtx);
     return result as unknown as CallToolResult;
   }
 
