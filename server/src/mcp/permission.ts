@@ -1,6 +1,7 @@
 import type {
   AgentLike,
   AllowListProvider,
+  Environment,
   Mcp,
   PermissionChecker,
   PermissionDecision,
@@ -22,6 +23,30 @@ export class AllowAllPermissionChecker implements PermissionChecker {
 export class AlwaysDenyAllowListProvider implements AllowListProvider {
   async isApproved(): Promise<boolean> {
     return false;
+  }
+}
+
+function needsApproval(level: ToolLevel, env: Environment): boolean {
+  if (level === 3) return false;
+  if (level === 2 && env === "staging") return false;
+  return true;
+}
+
+export class LevelPermissionChecker implements PermissionChecker {
+  async check(
+    ctx: SessionContext,
+    _mcp: Mcp,
+    tool: ToolDefinition,
+  ): Promise<PermissionDecision> {
+    const env: Environment = ctx.environment ?? "staging";
+    if (!needsApproval(tool.level, env)) {
+      return { allowed: true };
+    }
+    // report 시스템 미구현 — 승인 필요 경로는 무조건 reject
+    return {
+      allowed: false,
+      reason: `level ${tool.level} in ${env} requires approved report`,
+    };
   }
 }
 

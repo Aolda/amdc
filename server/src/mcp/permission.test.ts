@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   AgentDefaultPermissionChecker,
   AllowAllPermissionChecker,
+  LevelPermissionChecker,
 } from "./permission.js";
 import type {
   AgentLike,
@@ -185,5 +186,65 @@ describe("AgentDefaultPermissionChecker", () => {
       makeTool("risky", 2),
     );
     expect(decision.allowed).toBe(true);
+  });
+});
+
+describe("LevelPermissionChecker", () => {
+  const checker = new LevelPermissionChecker();
+  const mcp = makeMcp("test", 3);
+
+  it("allows level 3 in staging", async () => {
+    const d = await checker.check(
+      { ...ctx, environment: "staging" },
+      mcp,
+      makeTool("t", 3),
+    );
+    expect(d.allowed).toBe(true);
+  });
+
+  it("allows level 3 in prod", async () => {
+    const d = await checker.check(
+      { ...ctx, environment: "prod" },
+      mcp,
+      makeTool("t", 3),
+    );
+    expect(d.allowed).toBe(true);
+  });
+
+  it("allows level 2 in staging", async () => {
+    const d = await checker.check(
+      { ...ctx, environment: "staging" },
+      mcp,
+      makeTool("t", 2),
+    );
+    expect(d.allowed).toBe(true);
+  });
+
+  it("rejects level 2 in prod (no report)", async () => {
+    const d = await checker.check(
+      { ...ctx, environment: "prod" },
+      mcp,
+      makeTool("t", 2),
+    );
+    expect(d.allowed).toBe(false);
+    expect(d.reason).toContain("report");
+  });
+
+  it("rejects level 1 in staging (no report)", async () => {
+    const d = await checker.check(
+      { ...ctx, environment: "staging" },
+      mcp,
+      makeTool("t", 1),
+    );
+    expect(d.allowed).toBe(false);
+  });
+
+  it("rejects level 1 in prod (no report)", async () => {
+    const d = await checker.check(
+      { ...ctx, environment: "prod" },
+      mcp,
+      makeTool("t", 1),
+    );
+    expect(d.allowed).toBe(false);
   });
 });

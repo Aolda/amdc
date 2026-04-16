@@ -1,62 +1,32 @@
 import { Router, type Router as ExpressRouter } from "express";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { createProxyMcpServer } from "./proxy-server.js";
-import type { SessionRegistry } from "./session-registry.js";
-import type { McpRegistry } from "./mcp-registry.js";
-import type { PermissionChecker } from "./types.js";
-import type { DB } from "../db/index.js";
+import {
+  StreamableHTTPServerTransport,
+  type StreamableHTTPServerTransportOptions,
+} from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 
 export interface McpRouterDeps {
-  sessionRegistry: SessionRegistry;
-  mcpRegistry: McpRegistry;
-  permissionChecker: PermissionChecker;
-  db: DB;
+  proxyServer: Server;
 }
 
 export function createMcpRouter(deps: McpRouterDeps): ExpressRouter {
   const router: ExpressRouter = Router();
+  const { proxyServer } = deps;
 
-  router.post("/:token", async (req, res) => {
-    const ctx = deps.sessionRegistry.resolve(req.params.token);
-    if (!ctx) {
-      res.status(404).json({ error: { message: "Unknown MCP token" } });
-      return;
-    }
-    const server = createProxyMcpServer(
-      ctx,
-      deps.mcpRegistry,
-      deps.permissionChecker,
-      deps.db,
-    );
-    const transport = new StreamableHTTPServerTransport({
+  router.post("/", async (req, res) => {
+    const transportOptions: StreamableHTTPServerTransportOptions = {
       sessionIdGenerator: undefined,
-    });
+    };
+    const transport = new StreamableHTTPServerTransport(transportOptions);
     res.on("close", async () => {
       try {
         await transport.close();
-        await server.close();
       } catch {
-        // ignore transport/server close errors on connection drop
+        // ignore transport close errors on connection drop
       }
     });
-    await server.connect(transport);
+    await proxyServer.connect(transport);
     await transport.handleRequest(req, res, req.body);
-  });
-
-  router.get("/:token", async (req, res) => {
-    const ctx = deps.sessionRegistry.resolve(req.params.token);
-    if (!ctx) {
-      res.status(404).json({ error: { message: "Unknown MCP token" } });
-      return;
-    }
-    res.status(405).json({
-      error: { message: "GET (SSE) not supported in stateless mode" },
-    });
-  });
-
-  router.delete("/:token", async (req, res) => {
-    deps.sessionRegistry.revoke(req.params.token);
-    res.status(204).send();
   });
 
   return router;

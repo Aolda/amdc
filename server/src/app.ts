@@ -8,19 +8,17 @@ import { createSkillsRouter } from "./routes/skills.js";
 import { createAgentsRouter } from "./routes/agents.js";
 import { createMcpsRouter } from "./routes/mcps.js";
 import { createMcpRouter } from "./mcp/router.js";
-import type { SessionRegistry } from "./mcp/session-registry.js";
 import type { McpRegistry } from "./mcp/mcp-registry.js";
-import type { PermissionChecker } from "./mcp/types.js";
 import type { DB } from "./db/index.js";
 import type { MarkdownStore } from "./storage/markdown.js";
+import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 
 export interface AppDeps {
   db: DB;
   agentStore?: MarkdownStore;
   skillStore?: MarkdownStore;
-  sessionRegistry?: SessionRegistry;
   mcpRegistry?: McpRegistry;
-  permissionChecker?: PermissionChecker;
+  proxyServer?: Server;
 }
 
 export function createApp(deps: AppDeps): Express {
@@ -50,16 +48,8 @@ export function createApp(deps: AppDeps): Express {
     app.use("/api/agents", createAgentsRouter(deps.db, deps.agentStore));
   }
   app.use("/api/mcps", createMcpsRouter(deps.db, deps.mcpRegistry));
-  if (deps.sessionRegistry && deps.mcpRegistry && deps.permissionChecker) {
-    app.use(
-      "/mcp",
-      createMcpRouter({
-        sessionRegistry: deps.sessionRegistry,
-        mcpRegistry: deps.mcpRegistry,
-        permissionChecker: deps.permissionChecker,
-        db: deps.db,
-      }),
-    );
+  if (deps.proxyServer) {
+    app.use("/mcp", createMcpRouter({ proxyServer: deps.proxyServer }));
   }
 
   return app;

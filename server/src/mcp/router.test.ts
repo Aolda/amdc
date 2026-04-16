@@ -2,31 +2,15 @@ import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
 import { createApp } from "../app.js";
 import { createDatabase, type DB } from "../db/index.js";
-import {
-  createSessionRegistry,
-  type SessionRegistry,
-} from "./session-registry.js";
+import { syncMcpsToDb, seedNativeToolLevels } from "./mcp-sync.js";
 import { createMcpRegistry, type McpRegistry } from "./mcp-registry.js";
-import { AllowAllPermissionChecker } from "./permission.js";
+import { LevelPermissionChecker } from "./permission.js";
+import { createProxyMcpServer } from "./proxy-server.js";
 import { echoMeta } from "./plugins/echo.js";
 import type { Express } from "express";
 
 let app: Express;
 let db: DB;
-let sessionRegistry: SessionRegistry;
-let mcpRegistry: McpRegistry;
-
-beforeEach(async () => {
-  db = await createDatabase(":memory:");
-  sessionRegistry = createSessionRegistry();
-  mcpRegistry = createMcpRegistry([echoMeta]);
-  app = createApp({
-    db,
-    sessionRegistry,
-    mcpRegistry,
-    permissionChecker: new AllowAllPermissionChecker(),
-  });
-});
 
 const MCP_HEADERS = {
   "Content-Type": "application/json",
@@ -44,30 +28,25 @@ const INIT_BODY = {
   },
 };
 
-describe("POST /mcp/:token", () => {
-  it("returns 404 for unknown token", async () => {
-    const res = await request(app)
-      .post("/mcp/does-not-exist")
-      .set(MCP_HEADERS)
-      .send(INIT_BODY);
-    expect(res.status).toBe(404);
+beforeEach(async () => {
+  db = await createDatabase(":memory:");
+  await syncMcpsToDb(db, [echoMeta]);
+  await seedNativeToolLevels(db, [echoMeta]);
+  const mcpRegistry: McpRegistry = createMcpRegistry([echoMeta]);
+  const proxyServer = createProxyMcpServer({
+    registry: mcpRegistry,
+    permissionChecker: new LevelPermissionChecker(),
+    db,
   });
+  app = createApp({ db, mcpRegistry, proxyServer });
+});
 
-  it("handles initialize for a valid token", async () => {
-    const ctx = sessionRegistry.issueToken({ agentId: "a1" });
+describe("POST /mcp", () => {
+  it("handles initialize via JSON-RPC", async () => {
     const res = await request(app)
-      .post(`/mcp/${ctx.token}`)
+      .post("/mcp")
       .set(MCP_HEADERS)
       .send(INIT_BODY);
     expect(res.status).toBe(200);
-  });
-});
-
-describe("DELETE /mcp/:token", () => {
-  it("revokes the token", async () => {
-    const ctx = sessionRegistry.issueToken({ agentId: "a1" });
-    const del = await request(app).delete(`/mcp/${ctx.token}`);
-    expect(del.status).toBe(204);
-    expect(sessionRegistry.resolve(ctx.token)).toBeNull();
   });
 });

@@ -6,51 +6,21 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { createProxyMcpServer } from "./proxy-server.js";
+import {
+  createProxyMcpServer,
+  type ProxyMcpServerDeps,
+} from "./proxy-server.js";
 import { createMcpRegistry } from "./mcp-registry.js";
 import {
-  AgentDefaultPermissionChecker,
   AllowAllPermissionChecker,
+  LevelPermissionChecker,
 } from "./permission.js";
 import { echoMeta } from "./plugins/echo.js";
 import { createDatabase, type DB } from "../db/index.js";
 import { syncMcpsToDb, seedNativeToolLevels } from "./mcp-sync.js";
 import { insertWrapperRow } from "./wrapper-repository.js";
 import type { UpstreamTransportFactory } from "./plugins/mcp-upstream/factory.js";
-import type {
-  AgentLike,
-  McpMeta,
-  PermissionChecker,
-  SessionContext,
-  UpstreamMcpMeta,
-} from "./types.js";
-
-const ctx: SessionContext = {
-  token: "tkn",
-  sessionId: "ses",
-  agentId: "agent-1",
-};
-
-async function connectClient(
-  metas: McpMeta[],
-  checker: PermissionChecker = new AllowAllPermissionChecker(),
-  upstreamTransportFactory?: UpstreamTransportFactory,
-  dbOverride?: DB,
-): Promise<{ client: Client; db: DB }> {
-  const db = dbOverride ?? (await createDatabase(":memory:"));
-  if (!dbOverride) {
-    await syncMcpsToDb(db, metas);
-    await seedNativeToolLevels(db, metas);
-  }
-  const registry = createMcpRegistry(metas, { upstreamTransportFactory });
-  const server = createProxyMcpServer(ctx, registry, checker, db);
-  const [clientTransport, serverTransport] =
-    InMemoryTransport.createLinkedPair();
-  await server.connect(serverTransport);
-  const client = new Client({ name: "test-client", version: "0" });
-  await client.connect(clientTransport);
-  return { client, db };
-}
+import type { McpMeta, PermissionChecker, UpstreamMcpMeta } from "./types.js";
 
 function makeMockUpstream(
   tools: { name: string; inputSchema?: Record<string, unknown> }[],
@@ -90,16 +60,58 @@ function makeMockUpstream(
   };
 }
 
+async function connectClient(
+  metas: McpMeta[],
+  checker: PermissionChecker = new AllowAllPermissionChecker(),
+  upstreamTransportFactory?: UpstreamTransportFactory,
+  dbOverride?: DB,
+): Promise<{ client: Client; db: DB }> {
+  const db = dbOverride ?? (await createDatabase(":memory:"));
+  if (!dbOverride) {
+    await syncMcpsToDb(db, metas);
+    await seedNativeToolLevels(db, metas);
+  }
+  const registry = createMcpRegistry(metas, { upstreamTransportFactory });
+  const deps: ProxyMcpServerDeps = {
+    registry,
+    permissionChecker: checker,
+    db,
+  };
+  const proxyServer = createProxyMcpServer(deps);
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
+  await proxyServer.connect(serverTransport);
+  const client = new Client({ name: "test-client", version: "0" });
+  await client.connect(clientTransport);
+  return { client, db };
+}
+
 describe("proxy mcp server", () => {
-  it("lists echo tool via tools/list", async () => {
+  it("lists loader meta-tools (not raw tools) initially", async () => {
     const { client } = await connectClient([echoMeta]);
     const result = await client.listTools();
-    expect(result.tools.map((t) => t.name)).toContain("echo");
+    expect(result.tools.map((t) => t.name)).toEqual(["use_echo"]);
+    expect(result.tools[0].description).toContain("echo");
     await client.close();
   });
 
-  it("calls echo tool and receives echoed message", async () => {
+  it("loading an mcp reveals its tools", async () => {
     const { client } = await connectClient([echoMeta]);
+    const loadResult = await client.callTool({
+      name: "use_echo",
+      arguments: {},
+    });
+    expect(loadResult.isError).toBeFalsy();
+    const list = await client.listTools();
+    const names = list.tools.map((t) => t.name);
+    expect(names).toContain("echo");
+    expect(names).not.toContain("use_echo");
+    await client.close();
+  });
+
+  it("calls tool after loading and receives result", async () => {
+    const { client } = await connectClient([echoMeta]);
+    await client.callTool({ name: "use_echo", arguments: {} });
     const result = await client.callTool({
       name: "echo",
       arguments: { message: "hello proxy" },
@@ -120,55 +132,25 @@ describe("proxy mcp server", () => {
     await client.close();
   });
 
-  it("filters tools/list by agent mcp permission", async () => {
-    const agent: AgentLike = { id: "agent-1", mcps: [] };
-    const checker = new AgentDefaultPermissionChecker({
-      getAgent: async () => agent,
+  it("returns error for unknown mcp in loader", async () => {
+    const { client } = await connectClient([echoMeta]);
+    const result = await client.callTool({
+      name: "use_nonexistent",
+      arguments: {},
     });
-    const { client } = await connectClient([echoMeta], checker);
-    const result = await client.listTools();
-    expect(result.tools).toEqual([]);
+    expect(result.isError).toBe(true);
     await client.close();
   });
 
-  it("returns permission-denied error on callTool when mcp not allowed", async () => {
-    const agent: AgentLike = { id: "agent-1", mcps: [] };
-    const checker = new AgentDefaultPermissionChecker({
-      getAgent: async () => agent,
-    });
+  it("level 3 tools pass LevelPermissionChecker", async () => {
+    const checker = new LevelPermissionChecker();
     const { client } = await connectClient([echoMeta], checker);
+    await client.callTool({ name: "use_echo", arguments: {} });
     const result = await client.callTool({
       name: "echo",
       arguments: { message: "hi" },
     });
-    expect(result.isError).toBe(true);
-    const content = result.content as { type: string; text: string }[];
-    expect(content[0].text).toContain("permission denied");
-    await client.close();
-  });
-
-  it("exposes upstream MCP tools through passthrough with namespaced names", async () => {
-    const upstreamMeta: UpstreamMcpMeta = {
-      name: "mock",
-      kind: "upstream",
-      description: "mock upstream",
-      defaultLevel: 3,
-      transport: "http",
-      upstreamUrl: "http://ignored",
-    };
-    const factory = makeMockUpstream([{ name: "ping" }], (_name, args) => ({
-      args,
-    }));
-    const { client } = await connectClient([upstreamMeta], undefined, factory);
-    const list = await client.listTools();
-    expect(list.tools.map((t) => t.name)).toEqual(["mock__ping"]);
-    const call = await client.callTool({
-      name: "mock__ping",
-      arguments: { v: 42 },
-    });
-    expect(call.isError).toBeFalsy();
-    const content = call.content as { type: string; text: string }[];
-    expect(JSON.parse(content[0].text)).toEqual({ args: { v: 42 } });
+    expect(result.isError).toBeFalsy();
     await client.close();
   });
 
@@ -176,7 +158,7 @@ describe("proxy mcp server", () => {
     const upstreamMeta: UpstreamMcpMeta = {
       name: "mock",
       kind: "upstream",
-      description: "",
+      description: "mock upstream",
       defaultLevel: 3,
       transport: "http",
       upstreamUrl: "http://ignored",
@@ -203,6 +185,7 @@ describe("proxy mcp server", () => {
       factory,
       db,
     );
+    await client.callTool({ name: "use_mock", arguments: {} });
     const list = await client.listTools();
     expect(list.tools.map((t) => t.name).sort()).toEqual([
       "cpu_usage",
@@ -239,27 +222,9 @@ describe("proxy mcp server", () => {
       undefined,
       db,
     );
+    await client.callTool({ name: "use_echo", arguments: {} });
     const list = await client.listTools();
     expect(list.tools.map((t) => t.name)).toEqual([]);
-    await client.close();
-  });
-
-  it("exposes tool when agent has mcp selected with default level", async () => {
-    const agent: AgentLike = {
-      id: "agent-1",
-      mcps: [{ name: "echo", levelOverride: null, toolOverrides: [] }],
-    };
-    const checker = new AgentDefaultPermissionChecker({
-      getAgent: async () => agent,
-    });
-    const { client } = await connectClient([echoMeta], checker);
-    const list = await client.listTools();
-    expect(list.tools.map((t) => t.name)).toEqual(["echo"]);
-    const call = await client.callTool({
-      name: "echo",
-      arguments: { message: "hi" },
-    });
-    expect(call.isError).toBeFalsy();
     await client.close();
   });
 });

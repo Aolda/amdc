@@ -2,18 +2,16 @@ import "dotenv/config";
 import { createApp } from "./app.js";
 import { createDatabase } from "./db/index.js";
 import { createMarkdownStore } from "./storage/markdown.js";
-import { createSessionRegistry } from "./mcp/session-registry.js";
 import { createMcpRegistry } from "./mcp/mcp-registry.js";
-import { AgentDefaultPermissionChecker } from "./mcp/permission.js";
+import { LevelPermissionChecker } from "./mcp/permission.js";
 import {
-  fetchMcpToolLevels,
   loadCliMcpsFromDb,
   loadUpstreamMcpsFromDb,
   seedNativeToolLevels,
   syncMcpsToDb,
 } from "./mcp/mcp-sync.js";
 import { echoMeta } from "./mcp/plugins/echo.js";
-import { findAgentById, findAllAgents } from "./agents/repository.js";
+import { createProxyMcpServer } from "./mcp/proxy-server.js";
 
 const PORT = process.env.PORT || 3001;
 const DB_PATH = process.env.DB_PATH || "file:./data/amdc.db";
@@ -35,39 +33,19 @@ async function main() {
     ...upstreamMcpMetas,
     ...cliMcpMetas,
   ]);
-  const sessionRegistry = createSessionRegistry();
-  const permissionChecker = new AgentDefaultPermissionChecker({
-    getAgent: async (agentId) => {
-      const row = await findAgentById(db, agentStore, agentId);
-      return row ? { id: row.id, mcps: row.mcps } : null;
-    },
-    getToolDefaultLevel: async (mcpName, toolName) => {
-      const levels = await fetchMcpToolLevels(db, mcpName);
-      return levels.get(toolName) ?? null;
-    },
+  const permissionChecker = new LevelPermissionChecker();
+  const proxyServer = createProxyMcpServer({
+    registry: mcpRegistry,
+    permissionChecker,
+    db,
   });
-
-  if (process.env.NODE_ENV !== "production") {
-    const allAgents = await findAllAgents(db, agentStore);
-    if (allAgents.length > 0) {
-      const devCtx = sessionRegistry.issueToken({ agentId: allAgents[0].id });
-      console.log(
-        `[mcp] dev token for agent '${allAgents[0].name}': ${devCtx.token}`,
-      );
-    } else {
-      console.log(
-        "[mcp] no agents exist; create one via /api/agents to get a dev token",
-      );
-    }
-  }
 
   const app = createApp({
     db,
     agentStore,
     skillStore,
-    sessionRegistry,
     mcpRegistry,
-    permissionChecker,
+    proxyServer,
   });
 
   app.listen(PORT, () => {
