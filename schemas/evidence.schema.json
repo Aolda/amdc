@@ -1,0 +1,461 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://amdc.local/schemas/evidence/1.1.0",
+  "$comment": "AMDC evidence schema version 1.1.0",
+  "title": "AMDC Sanitized Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "evidence_id",
+    "run_id",
+    "tool_call_id",
+    "tool_name",
+    "source",
+    "source_contract_version",
+    "time_range",
+    "category",
+    "assessment",
+    "severity",
+    "summary",
+    "payload",
+    "truncated",
+    "redaction_status",
+    "collected_at"
+  ],
+  "properties": {
+    "evidence_id": {
+      "type": "string",
+      "pattern": "^ev_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^run_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+    },
+    "tool_call_id": {
+      "type": "string",
+      "pattern": "^tc_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+    },
+    "tool_name": {
+      "type": "string",
+      "enum": [
+        "backend_5xx_rate",
+        "backend_error_log_patterns",
+        "backend_health"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "enum": ["prometheus", "loki", "amdb_backend"]
+    },
+    "source_contract_version": {
+      "type": "string",
+      "enum": [
+        "backend_5xx_rate/v1",
+        "backend_error_log_patterns/v1",
+        "backend_health/v1"
+      ]
+    },
+    "time_range": {"$ref": "#/$defs/timeRange"},
+    "category": {
+      "type": "string",
+      "enum": ["metric", "log", "health"]
+    },
+    "assessment": {
+      "type": "string",
+      "enum": ["positive", "negative", "inconclusive"]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["info", "warning", "critical", "unknown"]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001F\\u007F])\\S(?:[\\s\\S]*\\S)?$"
+    },
+    "payload": {"type": "object"},
+    "truncated": {"type": "boolean"},
+    "redaction_status": {
+      "type": "string",
+      "enum": ["passed", "redacted"]
+    },
+    "collected_at": {"$ref": "#/$defs/timestamp"}
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "tool_name": {"const": "backend_5xx_rate"},
+        "source": {"const": "prometheus"},
+        "source_contract_version": {"const": "backend_5xx_rate/v1"},
+        "category": {"const": "metric"},
+        "payload": {"$ref": "#/$defs/metricPayload"},
+        "truncated": {"const": false}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "payload": {
+                "properties": {"source_assessment": {"const": "elevated"}},
+                "required": ["source_assessment"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "assessment": {"const": "positive"},
+              "severity": {"const": "warning"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "payload": {
+                "properties": {"source_assessment": {"const": "not_elevated"}},
+                "required": ["source_assessment"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "assessment": {"const": "negative"},
+              "severity": {"const": "info"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "payload": {
+                "properties": {"source_assessment": {"const": "insufficient_data"}},
+                "required": ["source_assessment"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "assessment": {"const": "inconclusive"},
+              "severity": {"const": "unknown"}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "properties": {
+        "tool_name": {"const": "backend_error_log_patterns"},
+        "source": {"const": "loki"},
+        "source_contract_version": {"const": "backend_error_log_patterns/v1"},
+        "category": {"const": "log"},
+        "payload": {"$ref": "#/$defs/logPayload"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "payload": {
+                "properties": {"source_assessment": {"const": "errors_observed"}},
+                "required": ["source_assessment"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "assessment": {"const": "positive"},
+              "severity": {"const": "warning"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "payload": {
+                "properties": {"source_assessment": {"const": "none_observed"}},
+                "required": ["source_assessment"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "assessment": {"const": "negative"},
+              "severity": {"const": "info"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "payload": {
+                "properties": {"source_assessment": {"const": "insufficient_data"}},
+                "required": ["source_assessment"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "assessment": {"const": "inconclusive"},
+              "severity": {"const": "unknown"}
+            }
+          }
+        }
+      ]
+    },
+    {
+      "properties": {
+        "tool_name": {"const": "backend_health"},
+        "source": {"const": "amdb_backend"},
+        "source_contract_version": {"const": "backend_health/v1"},
+        "category": {"const": "health"},
+        "payload": {"$ref": "#/$defs/healthPayload"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "payload": {
+                "properties": {"source_assessment": {"const": "healthy"}},
+                "required": ["source_assessment"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "assessment": {"const": "negative"},
+              "severity": {"const": "info"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "payload": {
+                "properties": {"source_assessment": {"const": "degraded"}},
+                "required": ["source_assessment"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "assessment": {"const": "positive"},
+              "severity": {"const": "warning"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "payload": {
+                "properties": {"source_assessment": {"const": "unhealthy"}},
+                "required": ["source_assessment"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "assessment": {"const": "positive"},
+              "severity": {"const": "critical"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "payload": {
+                "properties": {"source_assessment": {"const": "insufficient_data"}},
+                "required": ["source_assessment"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "assessment": {"const": "inconclusive"},
+              "severity": {"const": "unknown"}
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "timeRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": {"$ref": "#/$defs/timestamp"},
+        "end": {"$ref": "#/$defs/timestamp"}
+      }
+    },
+    "metricPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseline_range",
+        "request_count",
+        "error_5xx_count",
+        "error_rate",
+        "baseline_request_count",
+        "baseline_error_5xx_count",
+        "baseline_error_rate",
+        "source_assessment",
+        "reason"
+      ],
+      "properties": {
+        "baseline_range": {"$ref": "#/$defs/timeRange"},
+        "request_count": {"type": ["integer", "null"], "minimum": 0, "maximum": 9007199254740991},
+        "error_5xx_count": {"type": ["integer", "null"], "minimum": 0, "maximum": 9007199254740991},
+        "error_rate": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "baseline_request_count": {"type": ["integer", "null"], "minimum": 0, "maximum": 9007199254740991},
+        "baseline_error_5xx_count": {"type": ["integer", "null"], "minimum": 0, "maximum": 9007199254740991},
+        "baseline_error_rate": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "source_assessment": {
+          "type": "string",
+          "enum": ["elevated", "not_elevated", "insufficient_data"]
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "rate_and_delta_threshold_exceeded",
+            "below_elevation_threshold",
+            "low_sample",
+            "missing_series",
+            "malformed_series"
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "request_count": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+            "error_5xx_count": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+            "error_rate": {"type": "number", "minimum": 0, "maximum": 1},
+            "baseline_request_count": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+            "baseline_error_5xx_count": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+            "baseline_error_rate": {"type": "number", "minimum": 0, "maximum": 1},
+            "source_assessment": {"enum": ["elevated", "not_elevated"]}
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {"source_assessment": {"const": "elevated"}},
+                "required": ["source_assessment"]
+              },
+              "then": {
+                "properties": {"reason": {"const": "rate_and_delta_threshold_exceeded"}}
+              }
+            },
+            {
+              "if": {
+                "properties": {"source_assessment": {"const": "not_elevated"}},
+                "required": ["source_assessment"]
+              },
+              "then": {
+                "properties": {"reason": {"const": "below_elevation_threshold"}}
+              }
+            }
+          ]
+        },
+        {
+          "properties": {
+            "source_assessment": {"const": "insufficient_data"},
+            "reason": {"enum": ["low_sample", "missing_series", "malformed_series"]}
+          }
+        }
+      ]
+    },
+    "logPattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pattern", "count", "first_seen", "last_seen"],
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^(?![\\s\\S]*[\\u0000-\\u001F\\u007F])\\S(?:[\\s\\S]*\\S)?$"
+        },
+        "count": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "first_seen": {"$ref": "#/$defs/timestamp"},
+        "last_seen": {"$ref": "#/$defs/timestamp"}
+      }
+    },
+    "logPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["patterns", "source_assessment"],
+      "properties": {
+        "patterns": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {"$ref": "#/$defs/logPattern"}
+        },
+        "source_assessment": {
+          "type": "string",
+          "enum": ["errors_observed", "none_observed", "insufficient_data"]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "patterns": {"minItems": 1},
+            "source_assessment": {"const": "errors_observed"}
+          }
+        },
+        {
+          "properties": {
+            "patterns": {"maxItems": 0},
+            "source_assessment": {"const": "none_observed"}
+          }
+        },
+        {
+          "properties": {"source_assessment": {"const": "insufficient_data"}}
+        }
+      ]
+    },
+    "healthDependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "status"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^(?![\\s\\S]*[\\u0000-\\u001F\\u007F])\\S(?:[\\s\\S]*\\S)?$"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["healthy", "degraded", "unhealthy", "unknown"]
+        }
+      }
+    },
+    "healthPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["service_status", "dependencies", "checked_at", "source_assessment"],
+      "properties": {
+        "service_status": {
+          "type": "string",
+          "enum": ["healthy", "degraded", "unhealthy", "unknown"]
+        },
+        "dependencies": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {"$ref": "#/$defs/healthDependency"}
+        },
+        "checked_at": {"$ref": "#/$defs/timestamp"},
+        "source_assessment": {
+          "type": "string",
+          "enum": ["healthy", "degraded", "unhealthy", "insufficient_data"]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://amdc.local/schemas/tool-error/1.0.0",
+  "$comment": "AMDC sanitized Tool Error schema version 1.0.0",
+  "title": "AMDC Sanitized Tool Error",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tool_call_id",
+    "tool_name",
+    "source",
+    "code",
+    "retryable",
+    "occurred_at"
+  ],
+  "properties": {
+    "tool_call_id": {
+      "type": "string",
+      "pattern": "^tc_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+    },
+    "tool_name": {
+      "type": "string",
+      "enum": [
+        "unknown",
+        "backend_5xx_rate",
+        "backend_error_log_patterns",
+        "backend_health"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "enum": ["tool_core", "prometheus", "loki", "amdb_backend"]
+    },
+    "code": {
+      "type": "string",
+      "enum": [
+        "unknown_tool",
+        "invalid_input",
+        "environment_not_allowed",
+        "budget_exhausted",
+        "tool_timeout",
+        "tool_output_too_large",
+        "malformed_source_response",
+        "source_unavailable",
+        "source_permission_denied",
+        "evidence_budget_exhausted",
+        "redaction_failed",
+        "secret_exposure_risk"
+      ]
+    },
+    "retryable": {"const": false},
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "tool_name": {"const": "unknown"},
+        "source": {"const": "tool_core"},
+        "code": {"const": "unknown_tool"}
+      }
+    },
+    {
+      "properties": {
+        "tool_name": {"const": "backend_5xx_rate"},
+        "source": {"const": "prometheus"},
+        "code": {"not": {"const": "unknown_tool"}}
+      }
+    },
+    {
+      "properties": {
+        "tool_name": {"const": "backend_error_log_patterns"},
+        "source": {"const": "loki"},
+        "code": {"not": {"const": "unknown_tool"}}
+      }
+    },
+    {
+      "properties": {
+        "tool_name": {"const": "backend_health"},
+        "source": {"const": "amdb_backend"},
+        "code": {"not": {"const": "unknown_tool"}}
+      }
+    }
+  ]
+}

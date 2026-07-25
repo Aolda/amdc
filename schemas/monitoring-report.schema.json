@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://amdc.local/schemas/monitoring-report/1.1.0",
+  "$comment": "AMDC report schema version 1.1.0",
+  "title": "AMDC Monitoring Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "summary",
+    "detected_problem",
+    "observations",
+    "suspected_cause",
+    "recommended_next_action",
+    "needs_additional_permission"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "problem_detected",
+        "no_problem_detected",
+        "insufficient_tools",
+        "needs_permission"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^\\S(?:[^\\r\\n]*\\S)?$",
+      "not": {"pattern": "[\\u0000-\\u001F\\u007F]"}
+    },
+    "detected_problem": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "pattern": "^\\S(?:[^\\r\\n]*\\S)?$",
+          "not": {"pattern": "[\\u0000-\\u001F\\u007F]"}
+        }
+      ]
+    },
+    "observations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "not": {"pattern": "[\\u0000-\\u001F\\u007F]"},
+        "oneOf": [
+          {
+            "pattern": "^\\[ev_[0-7][0-9A-HJKMNP-TV-Z]{25}\\] \\S(?:[^\\r\\n]*\\S)?$"
+          },
+          {
+            "pattern": "^\\[tool:tc_[0-7][0-9A-HJKMNP-TV-Z]{25}/(?:unknown_tool|invalid_input|environment_not_allowed|budget_exhausted|tool_timeout|tool_output_too_large|malformed_source_response|source_unavailable|source_permission_denied|evidence_budget_exhausted|redaction_failed)\\] \\S(?:[^\\r\\n]*\\S)?$"
+          }
+        ]
+      }
+    },
+    "suspected_cause": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "pattern": "^가능성: \\S(?:[^\\r\\n]*\\S)?$",
+          "not": {"pattern": "[\\u0000-\\u001F\\u007F]"}
+        }
+      ]
+    },
+    "recommended_next_action": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000,
+      "pattern": "^\\S(?:[^\\r\\n]*\\S)?$",
+      "not": {"pattern": "[\\u0000-\\u001F\\u007F]"}
+    },
+    "needs_additional_permission": {"type": "boolean"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["status"],
+        "properties": {"status": {"const": "problem_detected"}}
+      },
+      "then": {
+        "properties": {
+          "summary": {"const": "저장된 Evidence에서 문제 신호가 확인되었다."},
+          "detected_problem": {"type": "string", "minLength": 1},
+          "recommended_next_action": {"const": "positive Evidence와 관련 dependency 상태를 수동 확인하고 담당자에게 에스컬레이션한다."},
+          "needs_additional_permission": {"const": false}
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["status"],
+        "properties": {"status": {"const": "no_problem_detected"}}
+      },
+      "then": {
+        "properties": {
+          "summary": {"const": "세 required check에서 문제 신호가 확인되지 않았다."},
+          "detected_problem": {"type": "null"},
+          "suspected_cause": {"type": "null"},
+          "recommended_next_action": {"const": "기존 모니터링을 계속하고 새 증상이 생기면 별도 Run을 생성한다."},
+          "needs_additional_permission": {"const": false}
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["status"],
+        "properties": {"status": {"const": "insufficient_tools"}}
+      },
+      "then": {
+        "properties": {
+          "summary": {"const": "수집 범위가 부족해 문제 여부를 판단할 수 없다."},
+          "detected_problem": {"type": "null"},
+          "suspected_cause": {"type": "null"},
+          "recommended_next_action": {"const": "누락되거나 inconclusive한 read-only source를 수동 확인한다."},
+          "needs_additional_permission": {"const": false}
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["status"],
+        "properties": {"status": {"const": "needs_permission"}}
+      },
+      "then": {
+        "properties": {
+          "summary": {"const": "필수 read-only source의 조회 권한이 부족하다."},
+          "detected_problem": {"type": "null"},
+          "suspected_cause": {"type": "null"},
+          "recommended_next_action": {"const": "필수 source의 read-only 조회 권한을 요청한다."},
+          "needs_additional_permission": {"const": true}
+        }
+      }
+    }
+  ]
+}

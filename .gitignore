@@ -1,0 +1,30 @@
+# Local agent/browser state and generated artifacts
+.codex-temp/
+.claude/
+dist/
+node_modules/
+coverage/
+
+# Service-account keys and environment-local configuration
+config/keys/
+config/**/*.env
+.env
+.env.*
+*.env
+!.env.example
+
+# Other credentials
+*.pem
+*.p12
+*.pfx
+*.jks
+*.key
+*-key.json
+*credentials*.json
+service-account*.json
+
+# Runtime state
+*.log
+*.sqlite
+*.sqlite-*
+*.db
