@@ -60,7 +60,49 @@ Operator
   -> SQLite Store + read APIs
 ```
 
-![AMDC P0 런타임 아키텍처](docs/notion-assets/amdc-project-review-2026-07/01-runtime-architecture.png)
+```mermaid
+flowchart LR
+    accTitle: AMDC P0 런타임 아키텍처
+    accDescr: 운영자 요청이 REST API와 bounded queue를 거쳐 진단 Agent로 전달되고, AMDC Tool Core가 read-only source를 조회한 뒤 안전한 Evidence와 검증된 Report만 SQLite에 저장하는 목표 구조다.
+
+    O["Operator"] -->|POST Diagnosis Run| API["Fastify REST API<br/>auth · schema · secret pre-scan"]
+    API -->|queued Run commit + publish| Q["SQLite Run Store<br/>+ bounded in-process Queue"]
+    Q --> W["Worker + Run Orchestrator"]
+    W --> A["LangChain.js<br/>Diagnostic Agent"]
+    A -->|registered Tool + allowed args| T["AMDC Tool Core<br/>environment · budget · timeout<br/>redaction · secret scan"]
+
+    subgraph S["Read-only Sources"]
+        P["Prometheus"]
+        L["Loki"]
+        B["AMDB Backend"]
+    end
+
+    T -->|server-owned query| P
+    T -->|server-owned query| L
+    T -->|server-owned query| B
+    P -->|bounded response / failure| T
+    L -->|bounded response / failure| T
+    B -->|bounded response / failure| T
+
+    T --> E["sanitized Evidence<br/>or sanitized Tool Error"]
+    E -->|sanitized Tool result| A
+    E -->|per-call short transaction| Q
+    Q -->|stored same-Run artifacts| R["AMDC Outcome Resolver"]
+    R -->|allowed status + canonical observations| A
+    R -->|fixed fields + canonical observations| G["Report Assembler + Guard<br/>schema · semantic · secret"]
+    A -->|suspected_cause only| G
+    G -->|atomic completion| Q
+    Q -->|status · Evidence · Report| API
+    API -->|safe response| O
+
+    classDef control fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#172554
+    classDef source fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#064e3b
+    classDef guard fill:#fffbeb,stroke:#d97706,stroke-width:2px,color:#78350f
+
+    class API,Q,W,A,T control
+    class P,L,B source
+    class E,R,G guard
+```
 
 P0 계약에서 LangChain은 등록된 Tool 중 무엇을 어떤 순서로 확인할지와
 `suspected_cause` 가설만 생성하도록 제한됩니다. 환경, endpoint, credential,
@@ -356,8 +398,9 @@ deterministic core benchmark와 분리합니다.
 .
 ├─ ARCHITECTURE.md
 ├─ docs/
+│  ├─ agent-control-doc-policy.md
 │  ├─ prd/current/          # 현재 P0 구현 계약
-│  └─ notion-assets/        # 프로젝트 설명용 아키텍처 이미지
+│  └─ universal-project-agent-contract.md
 └─ schemas/
    ├─ evidence.schema.json
    ├─ tool-error.schema.json
