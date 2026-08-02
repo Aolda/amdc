@@ -1,0 +1,7 @@
+services:
+  amdc-discord-bot:
+    build: .
+    container_name: amdc-discord-bot
+    env_file:
+      - .env
+    restart: unless-stopped
