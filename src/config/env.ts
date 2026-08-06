@@ -7,6 +7,9 @@ export interface AppConfig {
   discordGuildId: string;
   amdcEnvironment: AmdcEnvironment;
   diagnosticRunnerMode: DiagnosticRunnerMode;
+  agentModel: string;
+  openaiApiKey?: string;
+  openaiBaseUrl?: string;
 }
 
 function readRequiredEnv(name: string): string {
@@ -40,11 +43,52 @@ function readDiagnosticRunnerMode(): DiagnosticRunnerMode {
 }
 
 export function loadConfig(): AppConfig {
+  const diagnosticRunnerMode = readDiagnosticRunnerMode();
+  const openaiApiKey = process.env.OPENAI_API_KEY?.trim();
+  const agentModel = process.env.AMDC_AGENT_MODEL?.trim();
+  const openaiBaseUrl = readOptionalUrl(
+    process.env.OPENAI_BASE_URL?.trim() || process.env.LITELLM_BASE_URL?.trim(),
+    "OPENAI_BASE_URL"
+  );
+
+  if (diagnosticRunnerMode === "langchain" && !openaiApiKey) {
+    throw new Error("Missing required environment variable: OPENAI_API_KEY");
+  }
+
+  if (diagnosticRunnerMode === "langchain" && !agentModel) {
+    throw new Error("Missing required environment variable: AMDC_AGENT_MODEL");
+  }
+
   return {
     discordToken: readRequiredEnv("DISCORD_TOKEN"),
     discordClientId: readRequiredEnv("DISCORD_CLIENT_ID"),
     discordGuildId: readRequiredEnv("DISCORD_GUILD_ID"),
     amdcEnvironment: readAmdcEnvironment(),
-    diagnosticRunnerMode: readDiagnosticRunnerMode()
+    diagnosticRunnerMode,
+    agentModel: agentModel || "mock",
+    openaiApiKey,
+    openaiBaseUrl
   };
+}
+
+function readOptionalUrl(value: string | undefined, name: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const url = new URL(value);
+
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      throw new Error();
+    }
+
+    if (url.username || url.password) {
+      throw new Error();
+    }
+
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    throw new Error(`${name} must be a valid http or https URL without credentials.`);
+  }
 }

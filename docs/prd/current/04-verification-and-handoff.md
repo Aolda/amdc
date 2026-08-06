@@ -175,7 +175,8 @@ admission 성공 latency 표본에 넣지 않고 saturation 결과에 별도 계
 
 ### Integration
 
-- POST -> SQLite/queue -> fake LangChain runner -> fake Tool Core -> Evidence -> Report
+- POST -> SQLite/queue -> LangChain runner with model test double -> Tool Core with
+  source test double -> Evidence -> Report
   -> GET Run/Evidence/Report
 - 네 가지 Report status fixture
 - partial Tool failure + positive Evidence precedence
@@ -279,10 +280,10 @@ Migration/rollback:
 2. runtime config/error catalog, canonical Evidence/Tool Error/Report schema tests
 3. SQLite migration/repository와 Run invariants
 4. auth, Run/Evidence API, bounded queue admission/recovery
-5. static Tool Registry/Core와 fake Tool 3개
+5. static Tool Registry/Core와 read-only Tool contract test double
 6. source assessment, Evidence Normalizer, outcome resolver
-7. fake AgentRunner vertical-slice E2E
-8. LangChain runner와 fake ChatModel structured-output tests
+7. AgentRunner vertical-slice E2E with model test double
+8. LangChain runner와 ChatModel structured-output tests
 9. OpenAI provider adapter
 10. concurrency, failure-injection, memory/load tests
 11. core rollback drill

@@ -26,7 +26,7 @@ burst를 제거하며, parallel Tool call은 후속 성능 요구가 생길 때 
 
 [Actionable Next Step]
 
-PRD 04의 core handoff로 fake Tool 3개와 아래 outcome matrix를 contract test로
+PRD 04의 core handoff로 read-only Tool contract test double과 아래 outcome matrix를
 만든다. 동시에 AMDB owner와 PRD 05의 live source mapping을 닫아야 전체 P0가
 `ready_for_implementation`으로 승격된다.
 
@@ -378,15 +378,15 @@ Tool data가 registry 밖 호출, environment 변경, secret/config 요청을 �
 
 ## Provider Boundary
 
-- `AgentRunner` interface 뒤에 production LangChain/OpenAI adapter와 test-only fake
-  adapter를 둔다.
+- `AgentRunner` interface 뒤에 production LangChain/OpenAI adapter와 test-only model
+  double을 둔다.
 - production provider는 tool calling과 configured structured-output strategy를
   지원해야 startup을 통과한다.
 - provider/model ID, prompt version, toolset version을 Run metadata에 저장한다.
 - live credential이 없거나 provider가 실패할 때 fake model로 fallback하지 않는다.
 - provider timeout/rate limit/network failure는 자동 retry 없이 sanitized failure로
   전달한다.
-- unit/integration/concurrency test는 fake model과 fake Tools만 사용한다.
+- unit/integration/concurrency test는 model/source test double만 사용한다.
 
 ## Verification Ownership
 

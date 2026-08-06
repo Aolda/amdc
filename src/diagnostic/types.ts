@@ -1,26 +1,25 @@
 import type { AmdcEnvironment, DiagnosticRunnerMode } from "../config/env.js";
+import type { AgentDiagnosisResult } from "../agent/types.js";
+import type { DiagnosticPresentation } from "../report/types.js";
 
 export interface DiagnosisRequest {
   symptom: string;
   requestedBy: string;
-  source: "discord";
+  source: "api" | "discord" | "trigger";
   receivedAt: string;
 }
 
 export interface DiagnosticRunnerContext {
   environment: AmdcEnvironment;
   runnerMode: DiagnosticRunnerMode;
-}
-
-export interface DiagnosisReport {
-  status: "mock" | "problem_detected" | "no_problem_detected" | "insufficient_tools";
-  summary: string;
-  suspectedCause: string;
-  recommendedActions: string[];
+  agentModel: string;
+  openaiApiKey?: string;
+  openaiBaseUrl?: string;
 }
 
 export interface DiagnosisResult {
-  report: DiagnosisReport;
+  diagnosis?: AgentDiagnosisResult;
+  presentation: DiagnosticPresentation;
 }
 
 export interface DiagnosticRunner {
