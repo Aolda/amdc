@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { LangChainDiagnosticAgent } from "../agent/langchain-diagnostic-agent.js";
 import { TemporaryDiagnosticPresenter } from "../report/temporary-diagnostic-presenter.js";
 import type { DiagnosticRunnerContext } from "../diagnostic/types.js";
@@ -41,7 +41,9 @@ function getToolRuntimeBundle(): ToolRuntimeBundle {
     return toolRuntimeBundle;
   }
 
-  const catalog = loadToolCatalogFromYaml(join(process.cwd(), "src/tools/catalogs/amdb-tools.yaml"));
+  const catalog = loadToolCatalogFromYaml(
+    fileURLToPath(new URL("../tools/catalogs/amdb-tools.yaml", import.meta.url))
+  );
   const registry = new PluginRegistry(catalog);
   const runtime = new YamlToolRuntime(registry);
 
