@@ -11,7 +11,7 @@ export class MockDiagnosticRunner implements DiagnosticRunner {
     context: DiagnosticRunnerContext
   ): Promise<DiagnosisResult> {
     return {
-      report: {
+      presentation: {
         status: "mock",
         summary: `증상 접수 완료: ${request.symptom}`,
         suspectedCause: "현재는 Discord 연결과 runner 교체 구조를 검증하는 mock 응답입니다.",

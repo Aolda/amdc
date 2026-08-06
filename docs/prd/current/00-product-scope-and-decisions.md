@@ -162,9 +162,9 @@ Required base settings:
 
 - `AMDC_AUTH_TOKEN`: `/v1` shared Bearer token
 - `AMDC_DATABASE_PATH`: SQLite file path
-- `AMDC_AGENT_PROVIDER`: production은 `openai`, test는 명시적 `fake`
-- `AMDC_MODEL`: production model ID
-- `OPENAI_API_KEY`: production adapter를 선택한 경우만 필수
+- `AMDC_DIAGNOSTIC_RUNNER`: `langchain` 또는 explicit local `mock`
+- `AMDC_AGENT_MODEL`: LangChain Diagnostic Agent model ID; `langchain` runner에서는 필수
+- `OPENAI_API_KEY`: `AMDC_DIAGNOSTIC_RUNNER=langchain`인 경우 필수
 - `AMDC_ENABLED_ENVIRONMENTS`: 기본 `dev`, 허용값 `dev` 또는 `dev,prod`
 
 각 enabled environment는 다음 server-owned source 설정을 가져야 한다.
@@ -179,10 +179,9 @@ Required base settings:
 userinfo, query, fragment를 허용하지 않고 prod는 HTTPS만 허용한다. credential은
 deployment secret으로 주입하며 Agent에 env key 이름이나 값을 노출하지 않는다.
 
-enabled environment의 URL/필수 credential, auth token, DB path, production provider
-설정이 누락되면 startup을 중단한다. test에서 fake provider와 fake Tools를 쓰는
-경우 live provider/source credential을 요구하지 않는다. fake로 자동 fallback하지
-않는다. `AMDC_AGENT_PROVIDER=fake`는 `NODE_ENV=test`에서만 허용한다.
+enabled environment의 URL/필수 credential, auth token, DB path, LangChain provider
+설정이 누락되면 startup을 중단한다. explicit local `mock` runner는 Discord 연결 등
+외부 API 없는 wiring 확인에만 사용한다. fake로 자동 fallback하지 않는다.
 
 ## P0 Scenario Admission
 

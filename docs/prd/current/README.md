@@ -14,7 +14,7 @@ Last reviewed: 2026-07-22
 현재 계약이 된다.
 
 Gate Status는 구현 계약의 준비도이고 `Delivery Status`는 실제 코드/검증 진척이다.
-API, queue, LangChain/Tool Core, fake adapter, Evidence/Report core는 구현할 수 있지만
+API, queue, LangChain/Tool Core, explicit mock runner, Evidence/Report core는 구현할 수 있지만
 live source mapping이 미확정이므로 package 전체는 `ready_for_design`이다. 실행 가능한
 P0 코드는 아직 없다.
 
@@ -32,6 +32,8 @@ P0 코드는 아직 없다.
    - core 지표, 테스트 환경, 파일 경계, 구현 순서, rollback, 완료 조건
 6. [05-live-source-integration.md](05-live-source-integration.md)
    - Prometheus/Loki/Backend exact mapping과 dev smoke gate
+7. [06-diagnostic-agent-tool-runtime.md](06-diagnostic-agent-tool-runtime.md)
+   - Diagnostic Agent 판단 범위, domain plugin 선택, YAML 기반 Tool Runtime 경계
 
 ## 단일 기준 규칙
 
@@ -78,8 +80,8 @@ P0 실행 경로에 없다.
 
 - current repository와 검토한 Notion에는 exact Prometheus metric/label/PromQL,
   Loki selector/LogQL, Backend health route/payload의 authoritative 값이 없다.
-- 이 값은 과거 MCP 문서에서 추정하지 않는다. PRD 05의 versioned source contract와
-  dev fixture가 확정될 때까지 live adapter와 dev smoke는 design gate에 둔다.
+- 이 값은 과거 MCP 문서에서 추정하지 않는다. PRD 05의 versioned source contract가
+  확정될 때까지 live adapter와 dev smoke는 design gate에 둔다.
 
 ## 구현 시작 조건
 

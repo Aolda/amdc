@@ -1,16 +1,16 @@
-import type { DiagnosisReport } from "../../diagnostic/types.js";
+import type { DiagnosticPresentation } from "../../report/types.js";
 
-export function formatDiagnosisReport(report: DiagnosisReport): string {
-  const actions = report.recommendedActions
+export function formatDiagnosticPresentation(presentation: DiagnosticPresentation): string {
+  const actions = presentation.recommendedActions
     .map((action, index) => `${index + 1}. ${action}`)
     .join("\n");
 
   const message = [
-    "## AMDC Diagnostic Report",
+    "## AMDC Diagnostic Agent Result",
     "",
-    `**Status:** ${report.status}`,
-    `**Summary:** ${report.summary}`,
-    `**Suspected Cause:** ${report.suspectedCause}`,
+    `**Status:** ${presentation.status}`,
+    `**Summary:** ${presentation.summary}`,
+    `**Suspected Cause:** ${presentation.suspectedCause}`,
     "",
     "**Recommended Actions**",
     actions
