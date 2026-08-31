@@ -1,7 +1,7 @@
 # PRD 06. Diagnostic Agent And YAML Tool Runtime
 
 Status: draft amendment  
-Last reviewed: 2026-08-03  
+Last reviewed: 2026-08-28
 Owns: Diagnostic Agent 판단 범위, plugin/tool 선택 구조, YAML 기반 Tool Runtime 실행 경계
 
 ## Gate Review
@@ -61,6 +61,17 @@ HTTP healthcheck를 수행한다. 아직 live source adapter가 연결되지 않
 5. Tool Runtime이 YAML 정의를 기반으로 input/env/permission을 검증한다.
 6. 정규화된 관측 결과를 Agent에게 반환한다.
 7. Agent가 1차 DiagnosisResult를 생성한다.
+
+2026-08-28 첫 Prometheus vertical slice는 다음 경계를 사용한다.
+
+- `prometheus` plugin은 Prometheus 수집 대상 자체를 조회한다.
+- MySQL metric 조회 Tool은 `prometheus`가 아니라 `mysql` plugin에 둔다.
+- `prometheus_get_targets`, `mysql_get_service_status`, `mysql_get_connections`만
+  실제 read-only Prometheus HTTP 실행을 연결한다.
+- endpoint path와 PromQL은 YAML에 고정하고 Agent input으로 받지 않는다.
+- server-owned `AMDC_<ENV>_PROMETHEUS_URL`만 runtime이 resolve한다.
+- 성공 응답은 계산·판정·요약하지 않고 bounded raw Prometheus JSON body로 Agent에
+  반환한다.
 
 ## Product Scope
 
@@ -215,6 +226,7 @@ Tool Runtime is responsible for:
 - read-only execution 강제
 - raw output redaction
 - normalized ToolObservation 생성
+- bounded raw Tool result 생성
 - sanitized ToolError 생성
 
 Tool Runtime은 Agent 요청을 그대로 실행하지 않는다. Agent 요청은 Tool name과
@@ -304,6 +316,7 @@ Runtime result:
 ~~~ts
 type ToolRuntimeResult =
   | { ok: true; observation: ToolObservation }
+  | { ok: true; rawResult: RawToolResult }
   | { ok: false; error: SanitizedToolError };
 ~~~
 
@@ -326,7 +339,27 @@ interface ToolObservation {
 ~~~
 
 Raw source response is not passed to Report Agent and is not stored as evidence.
-Only sanitized and normalized observations cross the Tool Runtime boundary.
+Prometheus vertical slice의 raw response는 secret scan, JSON 형식 검증, 64 KiB 제한을
+통과한 경우에만 현재 Diagnostic Agent의 Tool message로 전달한다. raw response는
+DiagnosisResult, Report, trace log 또는 persistence에 복사하지 않는다. HTTP 오류
+body도 Agent에 반환하지 않는다. 후속 Evidence 저장 계약은 별도 gate에서 정한다.
+
+Prometheus HTTP YAML execution은 다음 값을 server-owned contract로 고정한다.
+
+~~~yaml
+execution:
+  type: prometheus_http
+  baseUrlEnvironment:
+    dev: AMDC_DEV_PROMETHEUS_URL
+    prod: AMDC_PROD_PROMETHEUS_URL
+  path: /api/v1/query
+  query:
+    query: '{__name__=~"mysql_up|mysql_global_status_uptime"}'
+~~~
+
+`path`는 fixed `/api/v1/*` 상대 경로만 허용한다. `query` 값에는 Agent argument나
+template substitution을 허용하지 않는다. runtime은 GET, redirect 거부, timeout,
+actual abort, same-origin URL 결합, prod HTTPS, response byte limit을 강제한다.
 
 ## Diagnostic Agent Output
 

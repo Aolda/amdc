@@ -41,8 +41,21 @@ plugins:
         execution:
           type: source_adapter
           operation: system_check_backend_health
-      - name: system_check_prometheus_targets
-        description: Check Prometheus target availability for MySQL, ProxySQL, node exporter, and AMDB custom exporter.
+
+  - name: prometheus
+    description: Tools that read Prometheus collection target and metric metadata.
+    domainHints:
+      - prometheus
+      - target
+      - scrape
+      - exporter
+      - metric
+      - 수집
+      - 타깃
+      - 메트릭
+    tools:
+      - name: prometheus_get_targets
+        description: Read active Prometheus targets, target labels, health, last scrape time, scrape duration, and last scrape error.
         access:
           level: 0
           readOnly: true
@@ -54,8 +67,13 @@ plugins:
           additionalProperties: false
           properties: {}
         execution:
-          type: source_adapter
-          operation: system_check_prometheus_targets
+          type: prometheus_http
+          baseUrlEnvironment:
+            dev: AMDC_DEV_PROMETHEUS_URL
+            prod: AMDC_PROD_PROMETHEUS_URL
+          path: /api/v1/targets
+          query:
+            state: active
 
   - name: logs
     description: Loki-based log search and log pattern summarization tools.
@@ -126,141 +144,6 @@ plugins:
           type: source_adapter
           operation: logs_search_query_digest
 
-  - name: metrics
-    description: Prometheus-based service, database, user, and container metric tools.
-    domainHints:
-      - metric
-      - metrics
-      - prometheus
-      - 5xx
-      - latency
-      - connection
-      - memory
-      - cpu
-      - qps
-      - query
-      - 지표
-      - 증가
-      - 느림
-      - 연결
-      - 메모리
-    tools:
-      - name: metrics_get_database_overview
-        description: Read database size, query count, and connection overview metrics for all AMDB databases.
-        access:
-          level: 0
-          readOnly: true
-        source: prometheus
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties: {}
-        execution:
-          type: source_adapter
-          operation: metrics_get_database_overview
-      - name: metrics_get_database_instant
-        description: Read current database size, table count, connection count, query count, slow query count, and average query time for one AMDB database.
-        access:
-          level: 0
-          readOnly: true
-        source: prometheus
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            mysqlDbName:
-              type: string
-              minLength: 1
-              maxLength: 128
-          required: [mysqlDbName]
-        execution:
-          type: source_adapter
-          operation: metrics_get_database_instant
-      - name: metrics_get_database_range
-        description: Read time series for database size, connections, query rate, slow queries, and average query time for one AMDB database.
-        access:
-          level: 0
-          readOnly: true
-        source: prometheus
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 10000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            mysqlDbName:
-              type: string
-              minLength: 1
-              maxLength: 128
-            windowMinutes:
-              type: number
-              enum: [10, 30, 60]
-          required: [mysqlDbName, windowMinutes]
-        execution:
-          type: source_adapter
-          operation: metrics_get_database_range
-      - name: metrics_get_user_connection_usage
-        description: Read ProxySQL and MySQL current connection usage for one AMDB database user.
-        access:
-          level: 0
-          readOnly: true
-        source: prometheus
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            username:
-              type: string
-              minLength: 1
-              maxLength: 128
-          required: [username]
-        execution:
-          type: source_adapter
-          operation: metrics_get_user_connection_usage
-      - name: metrics_get_mysql_global_status
-        description: Read MySQL server global status metrics such as uptime, connected threads, running threads, slow queries, and aborted connects.
-        access:
-          level: 0
-          readOnly: true
-        source: prometheus
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties: {}
-        execution:
-          type: source_adapter
-          operation: metrics_get_mysql_global_status
-      - name: metrics_get_container_resources
-        description: Read cAdvisor CPU, memory, network, filesystem, and OOM metrics for AMDB containers.
-        access:
-          level: 0
-          readOnly: true
-        source: cadvisor
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 10000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            service:
-              type: string
-              enum: [backend, celery-worker, celery-beat, custom-exporter, mysql, metadata-mysql, proxysql, redis]
-            windowMinutes:
-              type: number
-              enum: [10, 30, 60]
-          required: [service, windowMinutes]
-        execution:
-          type: source_adapter
-          operation: metrics_get_container_resources
-
   - name: proxy
     description: ProxySQL read-only status, routing, and connection pool tools.
     domainHints:
@@ -324,8 +207,8 @@ plugins:
           type: source_adapter
           operation: proxy_check_access_denials
 
-  - name: db
-    description: AMDB metadata and database inventory read-only tools.
+  - name: mysql
+    description: Tools that read MySQL server metrics and AMDB database inventory.
     domainHints:
       - db
       - database
@@ -338,6 +221,46 @@ plugins:
       - 용량
       - 할당량
     tools:
+      - name: mysql_get_service_status
+        description: Read the MySQL availability value, version information, and uptime from Prometheus.
+        access:
+          level: 0
+          readOnly: true
+        source: prometheus
+        allowedEnvironments: [dev, prod]
+        timeoutMs: 5000
+        input:
+          type: object
+          additionalProperties: false
+          properties: {}
+        execution:
+          type: prometheus_http
+          baseUrlEnvironment:
+            dev: AMDC_DEV_PROMETHEUS_URL
+            prod: AMDC_PROD_PROMETHEUS_URL
+          path: /api/v1/query
+          query:
+            query: '{__name__=~"mysql_up|mysql_version_info|mysql_global_status_uptime"}'
+      - name: mysql_get_connections
+        description: Read current, running, cumulative, failed, maximum-used, and configured-maximum MySQL connection metrics from Prometheus.
+        access:
+          level: 0
+          readOnly: true
+        source: prometheus
+        allowedEnvironments: [dev, prod]
+        timeoutMs: 5000
+        input:
+          type: object
+          additionalProperties: false
+          properties: {}
+        execution:
+          type: prometheus_http
+          baseUrlEnvironment:
+            dev: AMDC_DEV_PROMETHEUS_URL
+            prod: AMDC_PROD_PROMETHEUS_URL
+          path: /api/v1/query
+          query:
+            query: '{__name__=~"mysql_global_status_threads_connected|mysql_global_status_threads_running|mysql_global_status_connections|mysql_global_status_aborted_clients|mysql_global_status_aborted_connects|mysql_global_status_max_used_connections|mysql_global_variables_max_connections"}'
       - name: db_list_databases
         description: Read AMDB metadata for all databases, owners, status, quota, connection limits, and query digest logging flags.
         access:
@@ -473,7 +396,7 @@ plugins:
           operation: backup_list_restore_jobs
 
   - name: backend
-    description: AMDB Backend API and dependency status tools.
+    description: Tools that read AMDB FastAPI Backend health and source data.
     domainHints:
       - backend
       - api
@@ -484,8 +407,8 @@ plugins:
       - 접속
       - 백엔드
     tools:
-      - name: backend_check_api_health
-        description: Check AMDB Backend API health and dependency status using its read-only health endpoint.
+      - name: backend_get_health
+        description: Read the server-configured AMDB Backend health endpoint and return its HTTP status, content type, and response body.
         access:
           level: 0
           readOnly: true
@@ -497,5 +420,10 @@ plugins:
           additionalProperties: false
           properties: {}
         execution:
-          type: source_adapter
-          operation: backend_check_api_health
+          type: local_shell
+          command: |
+            curl --silent --show-error --include --request GET {{ env.backend_health_url }}
+          environment:
+            backend_health_url:
+              dev: AMDC_DEV_HEALTHCHECK_URL
+              prod: AMDC_PROD_HEALTHCHECK_URL
