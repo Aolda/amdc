@@ -1,7 +1,7 @@
 # PRD 00. 제품 범위 및 결정
 
 상태: 현재
-최종 검토: 2026-08-28
+최종 검토: 2026-09-03
 소유 범위: 제품 문제, 사용자, 진입 표면, 에이전트/AMDC 역할, 실행 환경 설정, P0 포함/제외 범위
 
 ## 게이트 검토
@@ -165,7 +165,7 @@ LangChain 도구 래퍼는 오직 도구 코어를 호출한다. 원천 어댑�
 | 저장소 | SQLite 단일 파일 + 저장소 인터페이스 |
 | 배포 | 단일 프로세스, 단일 복제본 |
 | 인증 | REST는 상태 확인 외 공용 Bearer 토큰. Discord는 설정된 길드/애플리케이션 어댑터 |
-| 환경 | `dev` 기본, `prod`는 명시적으로 활성화할 때만 허용 |
+| 환경 | 활성 환경 허용 목록은 `dev` 기본. 환경 입력이 없는 진입점은 기본값 없는 명시적 서버 선택값 사용 |
 | 첫 시나리오 | `backend_5xx_increase` |
 | 결과 | 정본 증거 + 검증되고 영속화된 7필드 리포트 + 선택적 Discord 투영 |
 | 실시간 원천 매핑 | PRD 05의 버전이 있는 원천 계약. 현재 설계 게이트 |
@@ -189,20 +189,72 @@ LangChain 도구 래퍼는 오직 도구 코어를 호출한다. 원천 어댑�
 P0 런타임은 프로세스 환경 또는 배포 비밀정보 주입만 사용한다.
 추적되는 `.env`, YAML 플러그인 목록, 자격 증명 파일은 현재 설정 계약이 아니다.
 
-필수 기본 설정:
+Discord `/diagnose`의 Run 환경 선택에는 기존 `AMDC_ENVIRONMENT`를 유지한다.
+이 선택은 현재 Discord 어댑터의 서버 소유 입력을 그대로 명시화하고 기존 명시
+배포의 키 변경을 피하면서, REST가 `dev,prod`를 동시에 허용하는 경우에도 Discord
+Run 하나를 모호하지 않게 고정한다. 단, 기존의 암묵적 `dev` 대체는 계약에서
+제거한다.
+
+검토한 대안과 반전 조건:
+
+| 후보 | 현재 판정 | 패배 조건과 추천 반전 조건 |
+|---|---|---|
+| 기존 `AMDC_ENVIRONMENT` 유지 | 선택 | Discord 외에 환경 입력이 없는 서버 진입점이 생겨 같은 프로세스에서 서로 다른 고정 환경을 요구하거나, 이 키가 Discord와 양립할 수 없는 별도 의미를 갖게 되면 전용 키로 분리 |
+| `AMDC_DISCORD_ENVIRONMENT` 도입 | 보류 | 현재는 같은 의미의 키를 중복해 충돌 상태와 마이그레이션만 늘림. 위와 같이 독립 선택값이 둘 이상 필요해지면 이 후보로 반전 |
+| 활성 환경이 하나일 때만 자동 선택 | 기각 | 허용 목록과 선택값을 합쳐 유효한 `dev,prod` 서버를 불필요하게 막음. 프로세스당 활성 환경을 정확히 하나로 제한하고 `dev,prod` 허용을 폐기할 때만 재검토 |
+
+Discord 환경 선택 관련 설정:
+
+| 설정 | 기본값 | 필수 조건 | 검증 |
+|---|---|---|---|
+| `AMDC_DISCORD_ENABLED` | 미설정 시 `false` | 항상 파싱 | 정확히 `true` 또는 `false`; 빈 값과 그 밖의 값은 무효 |
+| `AMDC_ENABLED_ENVIRONMENTS` | 미설정 시 `dev` | 항상 파싱 | 외곽 공백 제거 뒤 정확히 `dev` 또는 `dev,prod`; 명시적 빈 값, 역순, 중복, 항목 내부 공백은 무효 |
+| `AMDC_ENVIRONMENT` | 없음 | Discord 활성 시 명시적으로 필수 | 제공된 값은 활성 여부와 관계없이 정확히 `dev` 또는 `prod`이고 허용 목록의 멤버여야 함 |
+| `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID` | 없음 | Discord 활성 시 세 값 모두 필수 | 존재 여부만 시작 검증에 사용하며 값은 오류나 로그에 기록하지 않음 |
+
+그 밖의 필수 기본 설정:
 
 - `AMDC_AUTH_TOKEN`: `/v1` 공용 Bearer 토큰
 - `AMDC_DATABASE_PATH`: SQLite 파일 경로
 - `AMDC_DIAGNOSTIC_RUNNER`: `langchain` 또는 명시적 로컬 `mock`
 - `AMDC_AGENT_MODEL`: 진단/리포트 에이전트가 공유하는 모델 ID. `langchain`에서는 필수
 - `OPENAI_API_KEY`: `AMDC_DIAGNOSTIC_RUNNER=langchain`인 경우 필수
-- `AMDC_ENABLED_ENVIRONMENTS`: 기본 `dev`, 허용값 `dev` 또는 `dev,prod`
-- `AMDC_DISCORD_ENABLED`: 기본 `false`. `true`일 때만 Discord 어댑터 시작
+
+`AMDC_ENVIRONMENT`의 P0 소비자는 Discord `/diagnose`뿐이며 REST
+`POST /v1/runs`의 `environment` 기본값으로 사용하지 않는다.
 
 Discord를 활성화하면 `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`가 모두
 필수다. 토큰은 배포 비밀정보이고 클라이언트/길드 ID도 에이전트 입력, 리포트, 기본
-로그에 넣지 않는다. `/diagnose`의 환경은 서버 소유 설정에서 정하며 명령
-선택지나 리포트 에이전트 입력으로 변경할 수 없다.
+로그에 넣지 않는다.
+
+`AMDC_ENABLED_ENVIRONMENTS`는 허용 목록이며 Discord 환경 선택값이 아니다.
+`AMDC_ENVIRONMENT`가 누락됐을 때 `dev`, 활성 환경의 첫 값 또는 유일한 값을
+대체값으로 사용하지 않는다. Discord가 비활성 상태여도 `AMDC_ENVIRONMENT`가
+제공되면 값과 허용 목록 멤버십을 검증한다.
+
+검증 순서는 (1) Discord 활성 플래그, (2) 활성 환경 허용 목록, (3) Discord 선택값의
+필수 여부·문법·허용 목록 멤버십, (4) Discord 활성 시 세 자격 증명의 존재 여부,
+(5) 모든 활성 환경의 원천 설정 순서다. 모든 검증은 HTTP 수신, Discord 명령 등록과
+로그인보다 먼저 끝낸다. 해당 실행 모드에서 필수인 설정의 누락, 지원하지 않는 값
+또는 허용 목록 불일치는 프로세스 시작을 중단한다. 시작 오류는 실제 설정 키,
+환경 값, 자격 증명을 기록하지 않고 고정된 사유 코드만 기록한다.
+
+선택된 환경은 AMDC가 소유하는 변경 불가 Run 환경과 도구 코어 내부
+`ToolExecutionContext`/`ToolRuntimeContext`에만 사용한다. 진단/리포트 에이전트
+입력·프롬프트, 정본 리포트, Discord 투영과 기본 로그에는 환경 값이나 환경 변수
+키를 포함하지 않는다. Discord 명령이나 에이전트 입력으로 선택된 환경을 변경할
+수 없다.
+
+`develop@71f2069`까지 사용된 `AMDC_ENVIRONMENT` 키 이름은 유지하므로 명시값을
+사용하던 배포에는 이름 변경이 없다. 다만 키 누락을 `dev`로 대체하던 동작은 현재
+계약이 아니다. 암묵적 기본값에 의존한 배포는 새 런타임 배포 전에 운영자가 확인한
+목표 환경을 명시해야 한다. 배포 사전 점검은 설정 키의 존재 여부만 확인하고 실제
+환경 값이나 자격 증명을 수집하거나 기록하지 않는다.
+
+기존 런타임은 Discord를 항상 시작하지만 현재 계약에서 미설정
+`AMDC_DISCORD_ENABLED`는 안전한 비활성 상태다. 기존 Discord 배포가 동작을 계속하려면
+새 런타임 활성화 단계에서 `true`를 명시해야 하며, 자격 증명 존재 여부로 활성 의도를
+추정하지 않는다.
 
 각 활성 환경은 다음 서버 소유 원천 설정을 가져야 한다.
 

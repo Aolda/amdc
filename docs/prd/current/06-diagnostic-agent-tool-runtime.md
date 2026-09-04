@@ -1,7 +1,7 @@
 # PRD 06. 상위 진단 구성요소 및 리포트 에이전트 인계
 
 상태: 현재 개정본
-최종 검토: 2026-08-29
+최종 검토: 2026-09-03
 리포트 핸드오프 게이트 상태: ready_for_implementation
 진단 런타임 정합화 게이트 상태: ready_for_design
 소유: 버전이 있는 진단-리포트 인계, 리포트 에이전트 예산, 구성요소 소유권,
@@ -219,7 +219,6 @@ interface ReportAgentInputV1 {
   readonly run: {
     readonly run_id: `run_${string}`;
     readonly scenario: "backend_5xx_increase";
-    readonly environment: "dev" | "prod";
     readonly diagnostic_reference_time: string;
   };
   readonly diagnosis: DiagnosisResultV1;
@@ -234,6 +233,8 @@ interface ReportAgentInputV1 {
 
 - 정확한 `report-agent-input/1.0.0`만 허용. 대체 경로/암묵적 마이그레이션 없음.
 - Run 값은 영속화된 변경 불가 Run에서만 주입.
+- `run`은 ID, 시나리오, 진단 기준 시각만 포함한다. 환경은 AMDC Run과
+  `ToolRuntimeContext`에만 남고 ReportAgentInput이나 모델 메시지로 전달하지 않는다.
 - 증거/오류는 PRD 03 스키마/비밀정보 검사를 통과해 이미 영속화됨.
 - 모든 산출물/진단 근거는 정확히 같은 Run이며 배열은 정본 호출 순서.
 - 생산자/모델 상태 필드는 수용하지 않음. AMDC는 해석기가 이미
@@ -646,7 +647,6 @@ interface ToolObservation {
 ~~~ts
 interface DiagnosisResult {
   readonly symptom: string;
-  readonly environment: "dev" | "prod";
   readonly inferredDomains: readonly {
     readonly domain: string;
     readonly reason: string;
@@ -666,6 +666,10 @@ interface DiagnosisResult {
   readonly incompleteReasons: readonly string[];
 }
 ~~~
+
+환경은 진단 에이전트의 입력·출력 필드가 아니다. 어댑터는 선택된 환경을
+DiagnosisResult 또는 `DiagnosisResultV1`에 추가하지 않으며, 도구 런타임이 AMDC
+내부 `ToolRuntimeContext`로만 사용한다.
 
 진단 문구 예시:
 
