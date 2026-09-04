@@ -1,7 +1,7 @@
 # PRD 06. 상위 진단 구성요소 및 리포트 에이전트 인계
 
 상태: 현재 개정본
-최종 검토: 2026-09-03
+최종 검토: 2026-09-04
 리포트 핸드오프 게이트 상태: ready_for_implementation
 진단 런타임 정합화 게이트 상태: ready_for_design
 소유: 버전이 있는 진단-리포트 인계, 리포트 에이전트 예산, 구성요소 소유권,
@@ -294,6 +294,10 @@ Run, 크기 초과/비밀정보 출력은 재시도 없이 닫힌 실패 처리�
 - 별도 `ReportAgentPort`. 진단 메시지 상태/도구 래퍼 공유 0.
 - PRD 00 `AMDC_AGENT_MODEL` 사용. 별도 리포트 모델 선택은 P0 비목표.
 - `problem_detected` Run당 모델 호출 최대 1회, 다른 상태 0회.
+- Report prompt artifact와 버전을 먼저 검증하고 PRD 01
+  `report_prompt_version` binding을 커밋한 뒤에만 `ReportAgentPort`를 호출한다.
+  포트에는 저장된 버전을 전달하며 현재 구성으로 다시 선택하지 않는다.
+- Report prompt binding이 실패하면 Report 제공자 호출과 모델 호출 event는 0회다.
 - 도구/진단 피드백/다른 Run 메모리 0.
 - 제공자 시간 초과 15초이며 PRD 01 Run 기한이 상한.
 - 최대 모델 출력 256토큰과 독립적인 300자 검증기 상한을 모두 적용.

@@ -7,7 +7,7 @@
 라이브 소스 게이트 상태: ready_for_design
 전달 상태: not_started
 아키텍처 결정일: 2026-07-07
-최종 검토: 2026-09-03
+최종 검토: 2026-09-04
 
 이 폴더의 문서만 현재 P0 개발 계약으로 사용한다. Notion, 보관 문서, 과거
 배포본, 기존 MCP 설정/고정 데이터/스크립트는 의사결정 이력이나 실험 근거일 뿐
@@ -90,6 +90,41 @@ API, 환경 고정, 대기열/상태, 실행, 시간 초과, 예산, 정제, 증
 - PR #3 Discord 봇/Gateway와 PR #5·#6 진단/YAML 구현은 재경 소유 상위 구성요소로
   보존한다. R0가 수정한 제품 원천/설정/빌드 파일은 0건이다.
 
+## 2026-09-03 R0 Agent prompt version 저장 계약 보정
+
+- Run은 `diagnostic_prompt_version`과 조건부 `report_prompt_version`을 별도
+  필드로 저장한다. 같은 Run 안에서 동일 에이전트의 모든 모델 호출은 하나의
+  변경 불가 버전만 사용한다.
+- terminal Run의 `report_prompt_version=null`은 Report prompt binding 경계를 넘지
+  않았다는 뜻이다. unknown, 누락 또는 마이그레이션 실패를 `null`로 표현하지 않는다.
+- 저장 필드, fresh schema와 예상 밖 legacy/부분 schema의 fail-closed 경계는
+  PRD 01, 호출 불변조건은 PRD 02/06, 로그 투영은 PRD 03, 실행 가능한 검증과
+  rollback은 PRD 04가 소유한다.
+
+## 2026-09-04 팀 구현 대조
+
+검토 기준점은 최신 팀 통합 브랜치 `origin/develop@71f2069`과 병합된
+[PR #3](https://github.com/Aolda/amdc/pull/3),
+[PR #5](https://github.com/Aolda/amdc/pull/5),
+[PR #6](https://github.com/Aolda/amdc/pull/6)이다. 아래 내용은 구현을 규범
+계약으로 승격하는 기록이 아니라, 현재
+코드에서 보존할 부분과 P0가 새로 충족해야 할 부분을 구분하는 기준이다. 상세
+소유권과 접점은 PRD 06이 소유한다.
+
+| 영역 | 확인된 사실 | 현재 PRD 판정 |
+|---|---|---|
+| Discord 진입/표시 | PR #3의 `/diagnose`, Gateway, 가짜 실행 및 임시 포매터와 PR #5의 `mock` 또는 `langchain` 실행기 선택이 병합됨 | 보존할 상위 시제품. 영속화된 정본 리포트 전달 완료가 아님 |
+| 진단/LangChain | PR #5의 `createAgent`, 구조화 출력, 파이프라인이 병합됨 | 보존할 상위 시제품. P0 진단 인계·도구 코어 준수는 별도 검증 필요 |
+| YAML 도구 런타임 | PR #5·#6의 YAML 목록/런타임과 빌드 패키징, configured HTTP health GET 한 경로가 존재 | 상위/전환 구현. 정적 3도구 계약 및 PRD 05 live mapping을 충족하지 않음 |
+| P0 정본 핵심 | Fastify REST, Run 대기열/SQLite, 정본 Evidence/Report runtime, 별도 Report Agent와 영속화 우선 Discord 전달이 없음 | `Delivery Status: not_started` 유지 |
+| 자동 검증 | 2026-09-04 현재 의존성 상태에서 `npm run typecheck` 통과. `test`, smoke, E2E 명령과 테스트 파일은 없음 | 컴파일 검증만 확인. P0 완료/검증 근거가 아님 |
+
+[GitHub 이슈 #4](https://github.com/Aolda/amdc/issues/4)와
+[이슈 #7](https://github.com/Aolda/amdc/issues/7)은 2026-09-04 현재 모두
+열려 있다. #4는 순서와 `tool_call_id` 참조를 보존하는 제한된 진단 출력 포트를,
+#7은 정본 리포트 조립·영속화 뒤 Discord 전달을 추적한다. 병합 커밋이나 이슈 존재만으로
+`implemented` 또는 `verified`를 선언하지 않는다.
+
 ## 2026-07-22 검토에서 닫힌 결정
 
 - P0 정본 API는 REST이며 운영자 CLI는 제품 범위가 아니다. 2026-08-28
@@ -137,6 +172,8 @@ API, 환경 고정, 대기열/상태, 실행, 시간 초과, 예산, 정제, 증
 - 핵심 검증/인계/롤백: 04 문서에서 닫힘
 - 실제 질의/경로/파서: 05 문서에서 미확정
 - ReportAgentInput/Output, 리포트 에이전트 예산, 구성요소 소유권: 06 문서에서 닫힘
+- agent별 prompt version 저장·호출·로그·마이그레이션: 01/02/03/04/06 문서에서
+  동일 의미로 닫힘
 
 따라서 핵심과 리포트 전달 계약은 `ready_for_implementation`, 패키지 전체와
 실제 원천 및 진단 런타임 정합화는 `ready_for_design`이다. 핵심/리포트

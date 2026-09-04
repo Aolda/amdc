@@ -1,7 +1,7 @@
 # PRD 03. 증거, 리포트 및 보안
 
 상태: 현재
-최종 검토: 2026-08-28
+최종 검토: 2026-09-04
 소유 범위: 증거/도구 오류, 리포트 조립/검증/영속화, Discord 전달 실패, 보안/관측성
 
 ## 게이트 검토
@@ -437,10 +437,40 @@ DB 장애로 최종 상태도 저장할 수 없으면 API와 로그는 `storage_
 
 - `timestamp`, `level`
 - `request_id`, `run_id`: 할당된 경우
+- `event`: 안전한 event 이름. 이 계약의 Run/model lifecycle 값은
+  `run_started | model_call_started | model_call_finished | run_completed | run_failed`
 - `stage`: `api | admission | queue | diagnostic_agent | tool_core | evidence | report_agent | report | storage | discord_delivery | cleanup | shutdown`
 - `tool_call_id`, `tool_name`: 해당하는 경우
+- `agent_role`: `diagnostic | report`, `model_call_index`: 모델 호출 event인 경우
 - `duration_ms`, `error_code`
-- `prompt_version`, `toolset_version`, `model_id`는 Run 시작/종료 event에만
+- `diagnostic_prompt_version`, `report_prompt_version`, `toolset_version`,
+  `model_id`는 `run_started | run_completed | run_failed` event에만
+
+Run lifecycle event에는 두 prompt version key를 모두 둔다.
+`diagnostic_prompt_version`은 non-null 문자열이고 `report_prompt_version`은 문자열 또는
+명시적 `null`이며 key 생략을 허용하지 않는다. 값은 event 시점의 동일 Run 행에서
+읽고 독립적으로 다시 계산하지 않는다. 단일 `prompt_version` 필드는 사용하지 않는다.
+
+모델 호출 event는 `run_id`, `agent_role`, `model_call_index`로 동일 Run의 변경 불가
+에이전트별 버전에 연결한다. `model_call_index`는 `agent_role`별로 한 Run 안에서 1부터
+증가하는 양의 정수이며 `(run_id, agent_role, model_call_index)`는 유일하다.
+`model_call_started`와 대응하는 `model_call_finished`는 같은 tuple을 사용한다.
+`model_call_started`는 로컬 adapter 호출 시작을 뜻할 뿐 제공자 수신·응답 또는 성공을
+뜻하지 않는다. `model_call_finished`는 프로세스가 살아 있는 동안 adapter가 반환,
+throw, timeout 또는 abort로 정착한 뒤 최대 한 번 기록하며 `duration_ms`와 안전한
+`error_code`를 포함한다. 시작 뒤 프로세스가 중단되면 finished 부재를 허용하지만 이를
+성공으로 해석하지 않는다.
+
+이 모델 호출 event는 비밀정보가 없는 관측 신호이며 durable 호출 원장이 아니다.
+Run/Report SQLite 트랜잭션이 로그 존재나 개수를 조회해 상태 전이를 결정하지 않는다.
+정확한 역할별 호출 상한은 조정기 예산으로 강제하고 가짜 adapter 호출 횟수와 event
+상관관계로 테스트한다. 프로세스 중단 뒤에도 호출 시도를 영속적으로 감사해야 하는
+요구가 생기면 PRD 01의 별도 데이터 모델 결정 없이는 로그를 원장으로 승격하지 않는다.
+
+`run_started`는 `queued -> running` 커밋 뒤, terminal event는 최종 상태 커밋 뒤
+기록한다. Report prompt binding은 PRD 01 트랜잭션으로 먼저 커밋하고 그 뒤에 Report
+`model_call_started`를 기록한다. 어느 모델 호출 event도 제공자 수신 여부를
+기록하거나 추정하지 않는다.
 
 최소 메트릭:
 

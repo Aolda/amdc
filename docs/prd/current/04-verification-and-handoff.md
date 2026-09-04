@@ -1,7 +1,7 @@
 # PRD 04. 검증 및 구현 인계
 
 상태: 현재
-최종 검토: 2026-09-03
+최종 검토: 2026-09-04
 핵심 계약 게이트 상태: ready_for_implementation
 리포트 전달 계약 게이트 상태: ready_for_implementation
 전달 상태: not_started
@@ -17,6 +17,11 @@ Gate Status: ready_for_implementation
 현재 P0는 `npm test`가 현재 코드 전용 테스트를 실제로 실행할 때부터 구현 진척으로
 계산한다. PR #3·#5·#6의 병합, `npm run build` 성공과 Discord 가짜 응답은
 ReportAgent 인계, 정본 영속화 또는 전달 실패 검증이 아니다.
+
+2026-09-04 `origin/develop@71f2069` 원천을 다시 대조한 결과, 현재 자동화된
+`test`/smoke/E2E 명령과 테스트 파일은 없고 `npm run typecheck`만 현재 의존성
+상태에서 통과했다. 이 결과는 TypeScript 정적 검사 근거일 뿐 REST, Run/SQLite,
+도구 코어, Evidence/Report, 실패 주입이나 Discord 전달 순서를 검증하지 않는다.
 
 이 게이트와 아래 인계는 API/대기열/저장, 진단 에이전트/도구 코어, 가짜 원천,
 증거/오류, 리포트 에이전트/조립/영속화와 가짜 Discord 전달을 대상으로
@@ -167,6 +172,12 @@ Node/TypeScript 테스트 골격, 정본 증거/도구 오류/리포트와 PRD 0
 | PRD 02/06 | 매핑할 수 없는 발견/원인 근거 한 개 | `failed` | 전체 인계 거부. 항목 누락/제공자/Discord 0 |
 | PRD 02/06 | 문제가 아닌 허용 상태 | `completed` | 리포트 에이전트 호출 0, `suspected_cause=null` |
 | PRD 03/06 | 양성 증거 + 유효한 리포트 초안 | `completed` | 리포트 에이전트 정확히 1회 호출, 정본 `problem_detected` |
+| PRD 01/02/03 | 진단 모델 호출 5회 | 허용된 최종 상태 | 호출 5회 모두 동일 `diagnostic_prompt_version`으로 재구성 |
+| PRD 01/03/06 | 문제가 아닌 terminal Run | `completed` | `report_prompt_version=null`, Report 모델 호출 event 0 |
+| PRD 01/03/06 | Report binding 커밋 뒤 adapter 시작 전 중단 | 시작 복구 뒤 `failed` | Report 버전 non-null, Report 모델 호출 event 0, 제공자 수신 주장 0 |
+| PRD 01/04 | 예상 밖 `runs.prompt_version` 또는 old/new 혼합 schema | 시작/접수 중단 | 자동 변환/추정 backfill/현재 schema 성공 주장 0 |
+| PRD 01/03 | 완료 커밋 전 prompt 필드/Report 상태 조합 불일치 | `failed` | Report insert/`completed` 커밋 0 |
+| PRD 01/03 | 시작 복구가 이미 terminal인 조합 불일치를 발견 | 시작/접수 중단 | terminal 재전이/정상 Report 주장 0 |
 | PRD 03/06 | 리포트 초안이 상태/조치/관찰 결과 추가 | `failed` | `invalid_report_generation`, 리포트/Discord 0 |
 | PRD 03/06 | 리포트 제공자 시간 초과 | `failed` | `provider_failure`, 리포트/Discord 0, 재시도 0 |
 | PRD 03/06 | 리포트 입력/출력의 비밀정보 | `failed` | 원시 산출물/리포트/Discord 0 |
@@ -199,6 +210,14 @@ Node/TypeScript 테스트 골격, 정본 증거/도구 오류/리포트와 PRD 0
 - Bearer 거부와 실행 시간 안전 비교 래퍼
 - 입력 비밀정보 사전 검사
 - Run 상태/타임스탬프/오류/리포트 불변조건
+- agent별 prompt version의 non-empty/변경 불가 규칙, Report의 한 번만 허용되는
+  `NULL -> version` 전이와 terminal null 의미
+- prompt 내용 변경 시 version ID 재사용 거부, 시작 시 두 agent의
+  version-to-artifact 매핑 검증, queued 뒤 구성 변화에도 Diagnostic artifact/version 고정
+- Run lifecycle prompt version key의 필수/explicit null/DB snapshot 일치와
+  모델 호출 `agent_role/model_call_index` 연결
+- agent 역할별 1부터 증가하는 model call index, tuple 유일성, started/finished pairing,
+  반환/throw/timeout/abort와 프로세스 중단에서 finished 의미
 - 키 집합 커서 인코딩/디코딩/필터 결합
 - 대기열 허가, 상한, 대기 시간 초과, 종료 시 해제
 - 도구 레지스트리 깊은 동결, 중복/읽기 전용/환경 거부
@@ -229,6 +248,10 @@ Node/TypeScript 테스트 골격, 정본 증거/도구 오류/리포트와 PRD 0
 - 모델 상태 불일치/잘못된 구조화 출력
 - 제공자/도구 시간 초과 및 실제 중단
 - SQLite 수신 전 시작 복구와 마이그레이션 실패
+- Report prompt binding 뒤 adapter 시작 전 중단과 adapter 시작 뒤 시간 초과를
+  분리하고 실제 호출별 agent/version을 유일하게 재구성
+- 예상 밖 단일 `prompt_version`, old/new 혼합 schema와 backup restore 실패 주입.
+  자동 변환 0, worker/listener 시작 0, 접수 0, 수동 무결성 복구 전 자동 재시도 0
 - 대기열 포화, 접수 게시/실패 전이 이중 실패, 정상 종료 장벽
 - 실패 Run 증거 조회와 안전 산출물 보존
 - 리포트 생성 실패와 영속화 이후 Discord 전달 실패 분리
@@ -337,9 +360,16 @@ Node/TypeScript 테스트 골격, 정본 증거/도구 오류/리포트와 PRD 0
   검증 빌드와 호환 배포 manifest를 보존한다.
 - 마이그레이션 전 WAL 체크포인트와 SQLite 백업 생성·검증
 - 마이그레이션은 순방향 전용 번호 파일이며 실패 시 시작/접수 중단
+- 첫 P0 schema는 두 agent prompt version column을 직접 생성한다. 예상 밖 단일
+  `prompt_version` 또는 부분 schema는 자동 변환하지 않고 별도 migration 결정 전
+  시작/접수를 중단한다.
 - 배포 롤백은 새 접수 중단 -> 최대 10초 배출 -> 이전 검증 빌드
   재배포 -> 호환 DB 열기 또는 검증된 백업 복원 순서
 - 호환되지 않는 스키마에서 이전 빌드를 억지로 기동하지 않음
+- 두 agent별 버전을 legacy 단일 `prompt_version`으로 축약하는 down migration 금지.
+  이전 빌드는 마이그레이션 전 검증된 백업과 함께만 복원
+- 백업 복원 실패 시 DB를 current로 열거나 worker/listener를 시작하지 않고 수동
+  복구와 무결성 재검증 전 접수/자동 재시도 금지
 - 롤백 뒤 상태 확인, 오래된 Run 복구, 고정 데이터 읽기를 확인한 후 접수 재개
 - 가짜/결정적 AgentRunner는 테스트 전용이며 운영 롤백 수단이 아님
 - Discord 전달 실패나 불확실 상태에서 롤백/재시작이 자동 재전송하지 않음

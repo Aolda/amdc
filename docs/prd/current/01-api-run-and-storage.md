@@ -1,7 +1,7 @@
 # PRD 01. API, Run 수명주기 및 저장소
 
 상태: 현재
-최종 검토: 2026-08-28
+최종 검토: 2026-09-04
 소유 범위: HTTP API, 인증, Run 상태, 큐 접수, SQLite 스키마와 보존 정책
 
 ## 게이트 검토
@@ -342,7 +342,13 @@ replay를 하지 않는다.
 - `status TEXT NOT NULL CHECK (status IN ('queued','running','completed','failed'))`
 - `error_code TEXT NULL`; null 또는 이 문서의 Run Error Code Catalog만 허용하는
   테이블 수준 `CHECK`
-- `prompt_version TEXT NOT NULL`
+- `diagnostic_prompt_version TEXT NOT NULL CHECK
+  (diagnostic_prompt_version = trim(diagnostic_prompt_version) AND
+  length(diagnostic_prompt_version) > 0)`
+- `report_prompt_version TEXT NULL CHECK
+  (report_prompt_version IS NULL OR
+  (report_prompt_version = trim(report_prompt_version) AND
+  length(report_prompt_version) > 0))`
 - `toolset_version TEXT NOT NULL`
 - `source_contract_set_version TEXT NOT NULL`, `source_contract_set_hash TEXT NOT NULL`
 - `model_id TEXT NULL`
@@ -352,6 +358,31 @@ replay를 하지 않는다.
 
 `source_contract_set_hash`도 정본 활성 계약 집합의 소문자 SHA-256 16진수
 64자다. 가짜 구현 전용 핵심 Run은 버전이 있는 가짜 설명자 집합을 사용한다.
+
+`diagnostic_prompt_version`은 queued Run 삽입 트랜잭션에서 고정하고 이후
+변경하지 않는다. 같은 Run의 모든 진단 모델 호출은 이 버전만 사용하며 실행 시점의
+현재 구성으로 대체하지 않는다.
+
+`report_prompt_version`은 `NULL`로 시작한다. PRD 02 결과 해석기가
+`problem_detected`를 계산하고 PRD 06 Report prompt artifact 검증이 끝난 뒤,
+외부 제공자 호출 전에 짧은 트랜잭션으로 `NULL`에서 검증된 버전으로 한 번만
+전이한다. non-`NULL`은 Report prompt binding이 완료됐다는 뜻이며 로컬 adapter
+호출, 제공자 수신·응답 또는 성공을 뜻하지 않는다. terminal Run의 `NULL`은 Report
+binding 경계를 넘지 않았다는 뜻이고, nonterminal Run의 `NULL`은 아직 그 경계에
+도달하지 않았을 수 있다는 뜻이다. unknown, 누락 또는 마이그레이션 실패를 `NULL`로
+표현하지 않는다.
+
+`completed` Run의 정본 리포트 상태가 `problem_detected`이면
+`report_prompt_version`은 non-null이어야 하고, 다른 완료 상태면 `NULL`이어야 한다.
+`failed` Run은 binding 경계를 넘었는지에 따라 두 값 중 하나를 가질 수 있지만 어느
+경우도 정상 Report나 제공자 수신을 주장하지 않는다. 이 저장 필드/리포트 상태 조합만
+`completed` 전이의 DB 불변조건이다.
+
+Report 모델 호출 횟수는 PRD 06의 런타임 예산과 PRD 03/04의 관측·가짜 어댑터
+검증이 소유한다. 비동기 구조화 로그의 `model_call_started` 존재나 개수는 SQLite
+완료 트랜잭션의 선행조건이 아니며, 로그 누락이 이미 커밋된 terminal 상태를
+변경하지 않는다. 호출 시도에 대한 crash-safe 영속 감사가 필요해지면 별도
+데이터 모델 결정으로 `model_calls` 원장을 검토한다.
 
 ### tool_calls
 
@@ -420,6 +451,17 @@ Invalid Report는 저장하지 않으므로 `validation_status` column을 두지
 - 마이그레이션 전 DB 파일과 존재하는 `-wal`/`-shm` 상태를 안전하게 체크포인트한 뒤
   백업
 - 마이그레이션 실패 시 시작 중단. 부분 마이그레이션을 현재 상태로 표시하지 않음
+- `origin/develop@71f2069`에는 SQLite와 `runs` table이 없으므로 첫 P0 migration은
+  `diagnostic_prompt_version`과 nullable `report_prompt_version`을 처음부터 생성함
+- 기존 DB에서 단일 `runs.prompt_version`, old/new column 혼합 또는 알 수 없는 schema를
+  발견하면 자동 변환하지 않고 migration을 rollback한 뒤 시작/접수를 중단함. 기본값,
+  추정 backfill과 경고 후 계속 실행 금지
+- 실제 legacy DB가 별도로 확인되면 schema fingerprint, 허용 version ID, 행/키/외래 키
+  검증, 담당 검토자와 rollback을 가진 versioned migration manifest를 별도 결정한 뒤에만
+  변환을 구현함
+- 마이그레이션 또는 배포 rollback 중 검증된 백업 복원도 실패하면 DB를 current로
+  열거나 worker/listener를 시작하지 않고 시작 실패로 종료. 수동 복구로 백업과 DB
+  무결성을 다시 검증하기 전 자동 재시도와 접수 금지
 
 ## 보존 정책
 
