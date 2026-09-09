@@ -113,12 +113,41 @@ test("selecting mysql returns its lazy-loaded tool descriptors from the real cat
     [
       "mysql_get_service_status",
       "mysql_get_connections",
+      "mysql_get_query_activity",
       "db_list_databases",
       "db_get_database_detail",
       "db_list_users"
     ]
   );
   assert.equal(payload.loadedTools.every((loadedTool) => loadedTool.readOnly), true);
+});
+
+test("real catalog advertises only plugins with a connected implementation", () => {
+  const catalogPath = fileURLToPath(
+    new URL("../src/tools/catalogs/amdb-tools.yaml", import.meta.url)
+  );
+  const realRegistry = new PluginRegistry(loadToolCatalogFromYaml(catalogPath));
+
+  assert.deepEqual(
+    realRegistry.listPlugins().map((plugin) => plugin.name),
+    ["system", "prometheus", "mysql", "backend"]
+  );
+});
+
+test("mysql query activity uses a fixed Prometheus query", () => {
+  const catalogPath = fileURLToPath(
+    new URL("../src/tools/catalogs/amdb-tools.yaml", import.meta.url)
+  );
+  const realRegistry = new PluginRegistry(loadToolCatalogFromYaml(catalogPath));
+  const tool = realRegistry.getTool("mysql_get_query_activity");
+
+  assert.equal(tool?.execution.type, "prometheus_http");
+  if (!tool || tool.execution.type !== "prometheus_http") {
+    assert.fail("Expected mysql_get_query_activity to use fixed Prometheus HTTP execution.");
+  }
+  assert.equal(tool.execution.path, "/api/v1/query");
+  assert.match(tool.execution.query.query, /mysql_global_status_slow_queries/);
+  assert.match(tool.execution.query.query, /amdb_user_max_query_time_us/);
 });
 
 test("selecting prometheus exposes only the live target Tool", () => {

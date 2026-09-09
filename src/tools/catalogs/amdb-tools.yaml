@@ -75,138 +75,6 @@ plugins:
           query:
             state: active
 
-  - name: logs
-    description: Loki-based log search and log pattern summarization tools.
-    domainHints:
-      - log
-      - logs
-      - error
-      - timeout
-      - exception
-      - 인증
-      - 오류
-      - 로그
-      - 접속
-    tools:
-      - name: logs_search_service_errors
-        description: Search recent logs for a selected service and summarize repeated warning or error patterns.
-        access:
-          level: 0
-          readOnly: true
-        source: loki
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 10000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            service:
-              type: string
-              enum: [backend, celery-worker, celery-beat, custom-exporter, mysql, metadata-mysql, proxysql, redis]
-              description: Docker compose service label to search.
-            windowMinutes:
-              type: number
-              enum: [5, 10, 30]
-            maxPatterns:
-              type: number
-              minimum: 1
-              maximum: 10
-          required: [service, windowMinutes, maxPatterns]
-        execution:
-          type: source_adapter
-          operation: logs_search_service_errors
-      - name: logs_search_query_digest
-        description: Search custom-exporter query digest logs for a database user and summarize slow or heavy query patterns.
-        access:
-          level: 0
-          readOnly: true
-        source: loki
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 10000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            mysqlDbName:
-              type: string
-              minLength: 1
-              maxLength: 128
-              description: AMDB MySQL database/user name.
-            windowMinutes:
-              type: number
-              enum: [10, 30, 60]
-            search:
-              type: string
-              maxLength: 100
-              description: Optional digest text filter.
-          required: [mysqlDbName, windowMinutes]
-        execution:
-          type: source_adapter
-          operation: logs_search_query_digest
-
-  - name: proxy
-    description: ProxySQL read-only status, routing, and connection pool tools.
-    domainHints:
-      - proxy
-      - proxysql
-      - routing
-      - pool
-      - hostgroup
-      - connection
-      - 접속
-      - 라우팅
-      - 프록시
-    tools:
-      - name: proxy_list_query_rules
-        description: Read active ProxySQL runtime query rules from the AMDB admin API.
-        access:
-          level: 0
-          readOnly: true
-        source: amdb_admin_api
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties: {}
-        execution:
-          type: source_adapter
-          operation: proxy_list_query_rules
-      - name: proxy_check_connection_pool
-        description: Read ProxySQL connection pool connection, latency, and backend status metrics.
-        access:
-          level: 0
-          readOnly: true
-        source: prometheus
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties: {}
-        execution:
-          type: source_adapter
-          operation: proxy_check_connection_pool
-      - name: proxy_check_access_denials
-        description: Read ProxySQL access denial counters for password failures, max connection rejections, and SQL injection detection.
-        access:
-          level: 0
-          readOnly: true
-        source: prometheus
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            windowMinutes:
-              type: number
-              enum: [10, 30, 60]
-          required: [windowMinutes]
-        execution:
-          type: source_adapter
-          operation: proxy_check_access_denials
-
   - name: mysql
     description: Tools that read MySQL server metrics and AMDB database inventory.
     domainHints:
@@ -261,6 +129,26 @@ plugins:
           path: /api/v1/query
           query:
             query: '{__name__=~"mysql_global_status_threads_connected|mysql_global_status_threads_running|mysql_global_status_connections|mysql_global_status_aborted_clients|mysql_global_status_aborted_connects|mysql_global_status_max_used_connections|mysql_global_variables_max_connections"}'
+      - name: mysql_get_query_activity
+        description: Read raw MySQL slow-query counts and AMDB per-user query duration metrics from Prometheus.
+        access:
+          level: 0
+          readOnly: true
+        source: prometheus
+        allowedEnvironments: [dev, prod]
+        timeoutMs: 5000
+        input:
+          type: object
+          additionalProperties: false
+          properties: {}
+        execution:
+          type: prometheus_http
+          baseUrlEnvironment:
+            dev: AMDC_DEV_PROMETHEUS_URL
+            prod: AMDC_PROD_PROMETHEUS_URL
+          path: /api/v1/query
+          query:
+            query: '{__name__=~"mysql_global_status_slow_queries|amdb_user_slow_queries|amdb_user_queries_total|amdb_user_avg_query_time_us|amdb_user_max_query_time_us|amdb_user_total_query_time_us"}'
       - name: db_list_databases
         description: Read AMDB metadata for all databases, owners, status, quota, connection limits, and query digest logging flags.
         access:
@@ -311,89 +199,6 @@ plugins:
         execution:
           type: source_adapter
           operation: db_list_users
-
-  - name: backup
-    description: Backup and restore state inspection tools.
-    domainHints:
-      - backup
-      - restore
-      - snapshot
-      - replica
-      - garage
-      - 백업
-      - 복구
-      - 스냅샷
-    tools:
-      - name: backup_get_overview
-        description: Read backup coverage summary, per-database backup state, and backup user hotspots.
-        access:
-          level: 0
-          readOnly: true
-        source: amdb_admin_api
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties: {}
-        execution:
-          type: source_adapter
-          operation: backup_get_overview
-      - name: backup_list_jobs
-        description: Read backup job list and status, optionally filtered by database id.
-        access:
-          level: 0
-          readOnly: true
-        source: amdb_admin_api
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            databaseId:
-              type: string
-              minLength: 1
-              maxLength: 128
-          required: []
-        execution:
-          type: source_adapter
-          operation: backup_list_jobs
-      - name: backup_get_schedule
-        description: Read configured backup schedule state.
-        access:
-          level: 0
-          readOnly: true
-        source: amdb_admin_api
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties: {}
-        execution:
-          type: source_adapter
-          operation: backup_get_schedule
-      - name: backup_list_restore_jobs
-        description: Read restore job list and status, optionally filtered by database id.
-        access:
-          level: 0
-          readOnly: true
-        source: amdb_admin_api
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            databaseId:
-              type: string
-              minLength: 1
-              maxLength: 128
-          required: []
-        execution:
-          type: source_adapter
-          operation: backup_list_restore_jobs
 
   - name: backend
     description: Tools that read AMDB FastAPI Backend health and source data.
