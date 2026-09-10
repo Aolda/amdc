@@ -156,11 +156,14 @@ Node/TypeScript 테스트 골격, 정본 증거/도구 오류/리포트와 PRD 0
 | PRD 02/06 | 운영 모드에서 미검증 또는 누락된 진단 포트 연결 | Run 없음, 시작 거부 | 기존 `runDiagnosis()` 직접 호출/모델 호출/가짜 자동 대체 0 |
 | PRD 02/06 | 검증 대상 진단 포트의 모든 모델 가시 메시지를 가짜 제공자로 포착 | 해당 시나리오 상태 | 서버 환경 문자열 없는 입력에서 환경값·환경 키 일치 0, PRD 02 prompt version·도구 정책 충족 |
 | PRD 00/06 | 명시적 로컬 mock 연결 확인을 가짜 Discord로 실행 | 정본 Run/리포트 없음 | PRD 06 고정 안내 1회, 진단/리포트/원천 호출 및 정본 DB 쓰기 0, 환경값 노출 0 |
+| PRD 00/01/06 | mock 모드 시작을 가짜 서버·저장소·제공자로 실행 | 정본 Run/리포트 없음 | HTTP listen/SQLite 초기화·복구/대기열·제공자 생성 0, REST 접수 0; API·DB·실제 원천 설정 없이 연결 모드 시작 |
 | PRD 00/06 | mock 고정 안내의 `editReply` 실패 | 정본 Run/리포트 없음 | 두 번째 `editReply` 및 정본 리포트 전달 이벤트 0 |
 | PRD 03 | 네 상태의 고정 요약·후속 조치를 문서 표에서 읽어 schema 1.1.0과 비교 | 문서 검증 | 8개 문자열의 `const` 불일치 0; 네 상태의 최소 7필드 리포트 스키마 검증 통과 |
 | PRD 00/01 | 지원하지 않는 시나리오 | Run 없음 | 422 `unsupported_scenario` |
 | PRD 01/03 | 비밀정보가 포함된 입력 | Run 없음 | 422, 제공자/DB 전달 0 |
 | PRD 01 | 접수 포화 | 수락 또는 429 | 수락 요청만 DB 행 보유 |
+| PRD 01/02/06 | Run 시작 뒤 서버 시계가 진행한 상태로 여러 도구와 인계 실행 | 계약 상태 유지 | 모든 도구 기준 시각과 인계 `diagnostic_reference_time`이 저장된 `started_at`과 일치, 재계산 0 |
+| PRD 01/02/06 | queued 상태 실패 또는 Run/도구/인계 기준 시각 불일치 | 거부 | queued 실패는 `started_at=null` 유지·포트 호출 0, 시각 불일치는 인계/리포트 제공자 호출 0 |
 | PRD 01 | `queued` 커밋 후 프로세스 중단 | 시작 후 `failed` | `server_restarted`, 리포트 없음 |
 | PRD 01 | 게시 + 실패 전이 DB 실패 | 프로세스 즉시 중단 | 202 없음, 복구 전 수신 없음 |
 | PRD 01 | 접수 중 종료 | 행 없음 또는 `failed` | 허가 정확히 1회 해제 |
@@ -186,6 +189,8 @@ Node/TypeScript 테스트 골격, 정본 증거/도구 오류/리포트와 PRD 0
 | PRD 01/03 | 완료 커밋 전 prompt 필드/Report 상태 조합 불일치 | `failed` | Report insert/`completed` 커밋 0 |
 | PRD 01/03 | 시작 복구가 이미 terminal인 조합 불일치를 발견 | 시작/접수 중단 | terminal 재전이/정상 Report 주장 0 |
 | PRD 03/06 | 리포트 초안이 상태/조치/관찰 결과 추가 | `failed` | `invalid_report_generation`, 리포트/Discord 0 |
+| PRD 01/03/06 | 수락된 증거/오류의 저장 실패 | 저장소 실패 정책 적용 | ReportAgentInput 조립/리포트 제공자 호출/리포트 저장/Discord 0 |
+| PRD 01/03/06 | 증거/오류 커밋 뒤 리포트 제공자 호출 중 프로세스 중단 | 시작 복구 뒤 `failed` | 커밋된 안전한 증거/오류 유지, 리포트 없음, Discord 0 |
 | PRD 03/06 | 리포트 제공자 시간 초과 | `failed` | `provider_failure`, 리포트/Discord 0, 재시도 0 |
 | PRD 03/06 | 리포트 입력/출력의 비밀정보 | `failed` | 원시 산출물/리포트/Discord 0 |
 | PRD 03 | 증거 항목/전체가 바이트 경계에 도달 | 불변 또는 안전한 오류 | 16/64 KiB 불변조건 |
@@ -361,10 +366,13 @@ Node/TypeScript 테스트 골격, 정본 증거/도구 오류/리포트와 PRD 0
   명시해야 한다. 플래그 누락이나 자격 증명 존재를 활성 의도로 자동 해석하지 않는다.
 - 설정을 먼저 명시해 기존 빌드에서도 동작함을 확인한 뒤 새 빌드를 배포한다.
   누락값을 `dev`나 허용 목록의 첫 값·유일한 값으로 자동 보정하지 않는다.
-- 첫 전환은 기존 프로세스를 중지한 뒤 새 빌드를 `AMDC_DISCORD_ENABLED=false`로
-  기동해 시작 검증과 HTTP 상태를 확인하고, 명시한 선택값·허용 목록·Discord 자격
+- 정본 진단 서비스의 첫 전환은 기존 프로세스를 중지한 뒤 새 빌드를
+  `AMDC_DIAGNOSTIC_RUNNER=langchain`, `AMDC_DISCORD_ENABLED=false`로 기동해
+  시작 검증과 HTTP 상태를 확인하고, 명시한 선택값·허용 목록·Discord 자격
   증명의 사전 검증이 끝난 다음 `true`로 재기동한다. 안정화 관찰이 끝날 때까지 이전
   검증 빌드와 호환 배포 manifest를 보존한다.
+- mock 연결 모드에는 위 HTTP 확인 및 아래 SQLite 마이그레이션/복구 절차를 적용하지
+  않는다. PRD 00/06의 HTTP·저장소 비활성 및 고정 연결 안내 검증만 적용한다.
 - 마이그레이션 전 WAL 체크포인트와 SQLite 백업 생성·검증
 - 마이그레이션은 순방향 전용 번호 파일이며 실패 시 시작/접수 중단
 - 첫 P0 schema는 두 agent prompt version column을 직접 생성한다. 예상 밖 단일

@@ -1,7 +1,9 @@
 # PRD 01. API, Run 수명주기 및 저장소
 
+정본 REST API와 Run 저장·복구 계약을 정의한다. 제품 실행에서는 langchain 모드에 적용하고, 연결 확인 전용 mock은 HTTP·저장소를 시작하지 않는다. 최신 적용 범위 보정은 팀 승인 대기다.
+
 상태: 현재
-최종 검토: 2026-09-04
+최종 검토: 2026-09-11 (리뷰 보정안, 팀 승인 대기)
 소유 범위: HTTP API, 인증, Run 상태, 큐 접수, SQLite 스키마와 보존 정책
 
 ## 게이트 검토
@@ -24,6 +26,14 @@ SQLite를 영속 작업 대기열처럼 주기 조회하는 방식은 재시작 
 
 API 스키마와 저장소/대기열 계약 테스트를 먼저 만들고 원천/제공자 호출을
 붙이기 전에 모든 상태 전이와 프로세스 중단 지점을 실패 주입으로 고정한다.
+
+## 적용 범위
+
+이 문서의 HTTP·SQLite·대기열·시작 복구 계약은 정본 진단 서비스에 적용한다.
+제품 `AMDC_DIAGNOSTIC_RUNNER=mock`에서는 PRD 00의 모드 예외에 따라 HTTP와
+저장소를 시작하지 않는다. `POST /v1/runs`를 접수하거나 mock 오류 응답을 새로
+정의하지 않는다. 정본 경로의 단위·통합 테스트는 mock 연결 모드로 전환하지 않고
+PRD 02/04의 가짜 포트를 명시적으로 주입하며 실제 자격 증명을 요구하지 않는다.
 
 ## 공통 규칙
 
@@ -255,6 +265,12 @@ running -> failed
 - `completed`: `started_at`, `ended_at`은 `null`이 아니고, `error_code`는 `null`, 스키마에 맞는 리포트
   정확히 1개
 - `failed`: `ended_at`, `error_code`는 `null`이 아니고, 리포트 0개
+- `queued -> running` CAS 트랜잭션에서 서버 시각을 한 번 캡처해 `runs.started_at`에
+  저장한다. 이 값이 PRD 02의 `diagnosticReferenceTime`과 PRD 06의
+  `run.diagnostic_reference_time`의 유일한 정본이다. 커밋 뒤 같은 값을 읽어 주입하며
+  호출 시각으로 다시 계산하지 않는다. 전용 중복 컬럼은 만들지 않는다.
+- `started_at`은 running 이후 변경하지 않으며 completed/failed와 시작 복구에서도
+  보존한다. queued에서 실패한 Run은 null을 유지하고 진단/리포트 포트를 호출하지 않는다.
 - 최종 상태에서 다른 상태로 전이하지 않는다.
 - 도구 실패는 곧 Run 실패가 아니다. PRD 02/03의 결정표로 유효한
   `insufficient_tools` 또는 `problem_detected` 리포트를 만들 수 있으면 Run은

@@ -160,7 +160,7 @@ R1-R5의 파일 권한을 확장하지 않고, #4의 출력 포트만 완료됐�
 
 ### mock 연결 확인 경계
 
-명시적 로컬 `AMDC_DIAGNOSTIC_RUNNER=mock`은 기존 연결 확인 목적을 유지한다.
+명시적 로컬 `AMDC_DIAGNOSTIC_RUNNER=mock`은 기존 연결 확인 목적을 유지한다. HTTP·저장소의 시작 금지와 모드별 필수 설정은 PRD 00이 소유하며, 이 분기는 REST에서 호출되지 않는다.
 `handleDiagnoseCommand()`는 설정/입력 검증과 기존 `deferReply` 뒤, `runReportFlow()`
 진입 전에 이 분기를 판정하고 다음 고정 안내를 `editReply`로 한 번만 보낸다.
 
@@ -186,10 +186,10 @@ mock에서 정본 인계까지 검증하는 대안은 기존 연결 확인의 �
 + 검증된 DiagnosisResult 호환 DTO
 + 영속화된 동일 Run 증거 / 정제된 도구 오류
 -> AMDC 결과 해석기가 허용한 상태
--> problem_detected가 아니면 리포트 에이전트를 건너뛰고 원인을 null로 사용
--> problem_detected이면 ReportAgentInputV1 검증/비밀정보 검사
--> 도구 없는 리포트 에이전트, 최대 한 번 호출
--> ReportAgentOutputV1 검증 및 비밀정보 검사
+-> 모든 상태에서 로컬 ReportAgentInputV1 조립/검증/비밀정보 검사
+-> problem_detected가 아니면 Report prompt binding/제공자 호출 없이 원인을 null로 사용
+-> problem_detected이면 Report prompt binding 커밋 뒤 도구 없는 리포트 에이전트 최대 한 번 호출
+-> problem_detected인 경우 ReportAgentOutputV1 검증 및 비밀정보 검사
 -> PRD 03 결정적 7필드 조립/검증/영속화
 -> 저장소에서 영속화된 리포트 읽기
 -> PRD 03 Discord 투영/전달
@@ -271,11 +271,12 @@ interface ReportAgentInputV1 {
 입력 불변조건:
 
 - 정확한 `report-agent-input/1.0.0`만 허용. 대체 경로/암묵적 마이그레이션 없음.
-- Run 값은 영속화된 변경 불가 Run에서만 주입.
+- Run 값은 영속화된 변경 불가 Run에서만 주입. `diagnostic_reference_time`은 PRD 01의 `runs.started_at`과 정확히 같은 값이며 null이거나 도구 세션의 기준 시각과 다르면 인계를 거부한다.
 - `run`은 ID, 시나리오, 진단 기준 시각만 포함한다. 환경은 AMDC Run과
   `ToolRuntimeContext`에만 남고 ReportAgentInput이나 모델 메시지로 전달하지 않는다.
 - 증거/오류는 PRD 03 스키마/비밀정보 검사를 통과해 이미 영속화됨.
 - 모든 산출물/진단 근거는 정확히 같은 Run이며 배열은 정본 호출 순서.
+- 비문제 상태도 이 DTO를 로컬에서 조립·검증한다. 실패 시 인계를 거부하며 제공자 호출이 없는 상태라고 검증을 건너뛰지 않는다.
 - 생산자/모델 상태 필드는 수용하지 않음. AMDC는 해석기가 이미
   `problem_detected`를 계산한 경우에만 이 DTO를 제공자에 전달.
 - 산출물 0개, 다른 Run 참조, 잘못된 시간 정렬, 해석되지 않은 근거는 제공자 호출 전 거부.

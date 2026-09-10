@@ -214,7 +214,7 @@ Discord 환경 선택 관련 설정:
 | `AMDC_ENVIRONMENT` | 없음 | Discord 활성 시 명시적으로 필수 | 제공된 값은 활성 여부와 관계없이 정확히 `dev` 또는 `prod`이고 허용 목록의 멤버여야 함 |
 | `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID` | 없음 | Discord 활성 시 세 값 모두 필수 | 존재 여부만 시작 검증에 사용하며 값은 오류나 로그에 기록하지 않음 |
 
-그 밖의 필수 기본 설정:
+그 밖의 필수 기본 설정(`langchain` 모드 기준; `mock`은 아래 예외 적용):
 
 - `AMDC_AUTH_TOKEN`: `/v1` 공용 Bearer 토큰
 - `AMDC_DATABASE_PATH`: SQLite 파일 경로
@@ -279,13 +279,22 @@ Discord를 활성화하면 `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_
 버전만 사용한다. 저장 필드와 `null` 의미는 PRD 01, 호출 시점의 버전 검증은
 PRD 02와 PRD 06, 구조화 로그 투영은 PRD 03이 소유한다.
 
-명시적 로컬 `mock`은 Discord 연결 확인에만 사용하며 정본 P0 Run/리포트를 만들지 않는다. 연결 확인의 분기·고정 안내·금지 호출은 PRD 06의 「mock 연결 확인 경계」가 소유한다. 핵심/리포트
+명시적 로컬 `mock`은 Discord 연결 확인에만 사용하며 정본 P0 Run/리포트를 만들지 않는다.
+이 모드에서는 HTTP 서버 자체를 열지 않는다(`POST /v1/runs`, 조회 API, `/healthz` 모두
+미노출). SQLite 초기화·마이그레이션·복구, 대기열 및 진단/리포트 제공자도 시작하지
+않는다. 따라서 `AMDC_AUTH_TOKEN`, `AMDC_DATABASE_PATH`, 모델/제공자와 실제 원천
+설정은 필수가 아니며 이를 읽어 연결하지 않는다. 모드, Discord 활성 플래그,
+환경 허용 목록과 제공된 환경 선택값 검증은 유지하고, Discord 활성 시 선택값과
+세 Discord 자격 증명은 계속 필수다. 시작 검증의 원천 설정 단계만 건너뛴다.
+HTTP를 열고 임의의 mock 오류를 반환하는 대안은 연결 확인 범위를 넓히므로 사용하지
+않는다. 연결 확인의 분기·고정 안내·금지 호출은 PRD 06의 「mock 연결 확인 경계」가 소유한다.
+핵심/리포트
 단위·통합 테스트의 가짜 구현은 같은 운영 포트와 스키마 검증기를 통과하는
 테스트 전용 의존성이며 운영 환경에서 모의/가짜 구현으로 자동 대체하지 않는다.
 
 ## P0 시나리오 접수
 
-`POST /v1/runs`는 `scenario=backend_5xx_increase`만 받는다. `problem`은 해당
+`langchain` 모드에서 제공하는 `POST /v1/runs`는 `scenario=backend_5xx_increase`만 받는다. `problem`은 해당
 시나리오의 시간·증상·운영 맥락을 자연어로 보충한다. 다른 시나리오는 Run을
 만들지 않고 `422 unsupported_scenario`로 거절한다. 자연어만으로 임의 장애 유형을
 분류하거나 추가 도구를 동적으로 발견하는 기능은 P0가 아니다.
