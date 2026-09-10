@@ -1,194 +1,310 @@
-# PRD 00. Product Scope And Decisions
+# PRD 00. 제품 범위 및 결정
 
-Status: current  
-Last reviewed: 2026-07-22  
-Owns: 제품 문제, 사용자, 기술 선택, runtime 설정, P0 포함/제외 범위
+P0 범위와 실행 설정을 정의한다. 정본 진단과 영속화된 리포트 전달을 기준으로 하며, 명시적 로컬 mock은 진단 결과를 만들지 않는 연결 확인 전용이다. 최신 리뷰 보정은 팀 승인 대기다.
 
-## Gate Review
+상태: 현재
+최종 검토: 2026-09-11 (리뷰 보정안, 팀 승인 대기)
+소유 범위: 제품 문제, 사용자, 진입 표면, 에이전트/AMDC 역할, 실행 환경 설정, P0 포함/제외 범위
 
-[Critical Review]
-Gate Status: ready_for_design
+## 게이트 검토
+
+[핵심 검토]
+게이트 상태: ready_for_design
 
 AMDB 운영자는 오류 발생 시 MySQL, ProxySQL, FastAPI Backend, 백업 시스템,
 Prometheus, Loki/Grafana를 오가며 조사한다. 조사 순서와 결론이 개인 경험에
-의존하고, timeout이나 데이터 부재가 정상 상태로 오판될 수 있다.
+의존하고, 시간 초과나 데이터 부재가 정상 상태로 오판될 수 있다.
 
-과거 Notion과 repository에는 Claude Code, MCP server, dynamic plugin, Trigger,
-Admin Page를 한 번에 구축하는 설계가 남아 있다. 이 자료의 제품 문제와
-read-only 원칙은 승계하지만 실행 구조는 폐기한다. 최신 P0는 단일 REST server의
-LangChain.js Diagnostic Agent와 AMDC-owned Tool Core만 구현한다.
+과거 Notion과 저장소에는 Claude Code, MCP 서버, 동적 플러그인, Trigger,
+관리자 페이지를 한 번에 구축하는 설계가 남아 있다. 이 자료의 제품 문제와
+읽기 전용 원칙은 승계하지만 실행 구조는 현재 계약으로 사용하지 않는다.
+최신 P0 핵심은 단일 REST 서버의 LangChain.js 진단 에이전트와 AMDC 소유 도구
+코어를 사용한다. 2026-08-28 개정은 기존 Discord `/diagnose`를 얇은 어댑터로
+보존하고 별도 도구 없는 리포트 에이전트와 영속화 우선 전달 경계를 추가한다.
 
-P0의 핵심 실패 조건은 Agent가 임의 실행 권한이나 환경 선택권을 얻거나, Tool
-실패를 숨긴 채 정상 Report를 만드는 것이다. 따라서 조사 판단은 LangChain이
-담당하되 권한, 실행, 상태 의미와 저장은 AMDC가 소유한다.
+P0의 핵심 실패 조건은 에이전트가 임의 실행 권한이나 환경 선택권을 얻거나, 도구
+실패를 숨긴 채 정상 리포트를 만들거나, 검증/영속화 전 초안을 Discord로
+보내는 것이다. 따라서 조사 판단은 진단 에이전트, 크기가 제한된 원인 초안은 리포트
+에이전트가 담당하되 권한, 실행, 상태 의미, 리포트 조립/검증/저장과
+전달 순서는 AMDC가 소유한다.
 
-LangChain 중심 전환과 core 경계는 닫혔지만 실제 AMDB telemetry의 exact
-query/route/parser는 authoritative 자료가 없어 PRD 05로 분리했다. 이를 추정한 채
-live adapter까지 구현하는 것은 허용하지 않는다.
+LangChain 중심 전환, 리포트/Discord 경계와 핵심 계약은 닫혔지만 실제 AMDB 원격 측정의 정확한
+질의/경로/파서는 정본 자료가 없어 PRD 05로 분리했다. 이를 추정한 채
+실제 어댑터까지 구현하는 것은 허용하지 않는다.
 
-[Trade-off Analysis]
+[대안 비교]
 
-Path A: LangChain.js `createAgent` + AMDC Tool Core. Chosen.
+경로 A: LangChain.js `createAgent` + AMDC 도구 코어. 선택함.
 
-- 이전 Evidence에 따라 다음 read-only Tool을 고르는 핵심 가치를 검증한다.
-- Agent loop는 재사용하면서 실행 경계와 결과 의미를 애플리케이션이 통제한다.
-- Tool budget, prompt injection, structured output 실패를 직접 검증해야 한다.
+- 이전 증거에 따라 다음 읽기 전용 도구를 고르는 핵심 가치를 검증한다.
+- 에이전트 순환은 재사용하면서 실행 경계와 결과 의미를 애플리케이션이 통제한다.
+- 도구 예산, 프롬프트 주입, 구조화 출력 실패를 직접 검증해야 한다.
 
-Path B: 직접 LangGraph StateGraph를 설계한다.
+경로 B: LangGraph StateGraph를 직접 설계한다.
 
 - 단계와 전이를 더 세밀하게 통제할 수 있다.
-- 단일 시나리오 P0에는 별도 graph state, checkpoint, resume 계약이 과하다.
+- 단일 시나리오 P0에는 별도 그래프 상태, 체크포인트, 재개 계약이 과하다.
 
-Path C: 결정론적 진단 playbook.
+경로 C: 결정론적 진단 플레이북.
 
 - 예측 가능하고 테스트하기 쉽다.
-- Evidence에 따라 조사 순서를 바꾸는 제품 가치를 검증하지 못한다.
+- 증거에 따라 조사 순서를 바꾸는 제품 가치를 검증하지 못한다.
 
-Path D: MCP 기반 Tool runtime.
+경로 D: MCP 기반 도구 런타임.
 
-- discovery와 dispatcher 규격을 재사용할 수 있다.
-- 별도 protocol/server 경계를 추가하며 현재 LangChain 중심 제품 구조와 맞지
+- 탐색과 디스패처 규격을 재사용할 수 있다.
+- 별도 프로토콜/서버 경계를 추가하며 현재 LangChain 중심 제품 구조와 맞지
   않는다.
 
-Node.js REST server와 Python Agent service를 분리하는 안도 검토했지만, P0에서는
-배포·인증·timeout·관측성 경계만 늘어난다. Node.js/TypeScript 단일 프로세스를
+Node.js REST 서버와 Python 에이전트 서비스를 분리하는 안도 검토했지만, P0에서는
+배포·인증·시간 초과·관측성 경계만 늘어난다. Node.js/TypeScript 단일 프로세스를
 선택한다.
 
-[Actionable Next Step]
+리포트 에이전트가 Discord 문장 전체를 생성·전송하는 안은 데모 경로가 짧지만
+정본 리포트와 채널 표현을 결합하고 전달 실패가 Run 결과를 오염시킨다.
+P0는 `리포트 에이전트 -> AMDC 조립/검증/영속화 -> Discord 어댑터`를
+선택한다. Discord 실패는 저장된 리포트를 변경하지 않는다.
 
-PRD 04의 bounded core handoff로 current-only fixture와 schema validator를 구현할 수
-있다. 병행해서 PRD 05의 source mapping을 AMDB owner와 확정한다. legacy MCP
-validator의 성공을 현재 구현 진척으로 계산하지 않는다.
+[실행 가능한 다음 단계]
+
+PRD 04의 크기가 제한된 핵심/리포트 인계로 현재 코드 전용 가짜 고정 데이터와 스키마 검증기를
+구현할 수 있다. 병행해서 PRD 05의 원천 매핑을 AMDB 담당자와 확정한다. R0는
+제품 코드를 변경하지 않으며 이전 MCP 검증기나 PR #3·#5·#6 병합 사실을 현재
+전달 완료로 계산하지 않는다.
 
 ## PAS
 
-### Problem
+### 문제
 
 소규모 AMDB 운영팀은 이상 신호를 받은 뒤 무엇부터 확인할지 매번 다시 판단한다.
 같은 문제도 담당자에 따라 조회 순서와 결과 형식이 달라진다.
 
-### Agitation
+### 악화 요인
 
-초기 조사 지연은 장애 시간을 늘린다. AI에 shell, credential, 운영 변경 권한을
-주면 조사 자동화보다 secret 노출, 잘못된 환경 실행, retry storm 위험이 커진다.
+초기 조사 지연은 장애 시간을 늘린다. AI에 셸, 자격 증명, 운영 변경 권한을
+주면 조사 자동화보다 비밀정보 노출, 잘못된 환경 실행, 재시도 폭주 위험이 커진다.
 
-### Solution
+### 해결책
 
-운영자가 고정된 P0 시나리오와 자연어 상황을 서버에 제출하면 LangChain.js
-Agent가 등록된 read-only Tool 안에서 조사한다. Tool Core가 모든 실행을 검증하고
-sanitized Evidence와 고정 Report를 저장해 팀이 같은 `run_id`로 근거와 결론을
-재조회한다.
+운영자가 REST 또는 Discord `/diagnose`로 고정된 P0 시나리오와 자연어 상황을
+제출하면 LangChain.js 진단 에이전트가 등록된 읽기 전용 도구 안에서 조사한다.
+도구 코어가 실행을 검증하고, 별도 리포트 에이전트가 정제된 인계에서 제한된
+원인 초안만 만든다. AMDC가 결정적 7필드 리포트를 검증·저장한 뒤 REST로
+조회하거나 Discord로 전달하므로 팀이 같은 `run_id`로 근거와 결론을 재조회한다.
 
 ## 제품 이름
 
-P0에서 `AMDC`는 모델 중립적인 제품명이다. 과거 문서의 `Automated Monitor &
-Debugger with Claude` 풀이는 historical naming이며 현재 runtime 계약이 아니다.
-Claude Code, Codex CLI 또는 로컬 사용자 로그인 세션에 제품 identity를 묶지
+P0에서 `AMDC`는 모델 중립적인 제품명이다. 과거 문서의 `Automated Monitor & Debugger with Claude` 풀이는 과거 명칭이며 현재 런타임 계약이 아니다.
+Claude Code, Codex CLI 또는 로컬 사용자 로그인 세션에 제품 정체성을 묶지
 않는다.
 
 ## 사용자
 
-Primary User: AMDB 운영 개발자
+주 사용자: AMDB 운영 개발자
 
-- `backend_5xx_increase` 시나리오와 dev/prod 상황을 제출한다.
-- Run 상태, sanitized Evidence, sanitized Tool Error, 최종 Report를 조회한다.
+- REST 또는 Discord `/diagnose`로 `backend_5xx_increase` 시나리오의 증상을 제출한다.
+- Run 상태, 정제된 증거, 정제된 도구 오류, 최종 리포트를 조회한다.
 - 다른 운영자에게 `run_id`를 전달해 같은 근거를 재조회한다.
 
-shared Bearer token은 API 접근 주체만 인증한다. `requested_by`는 사용자가 입력한
-표시용 label이며 검증된 사용자 identity나 감사 주체로 취급하지 않는다.
+공용 Bearer 토큰은 API 접근 주체만 인증한다. `requested_by`는 사용자가 입력한
+표시용 레이블이며 검증된 사용자 신원이나 감사 주체로 취급하지 않는다. Discord
+사용자명도 같은 표시용 레이블이고 인증·권한 판단 입력으로 사용하지 않는다.
 
-## LangChain And AMDC Boundary
+## 에이전트, AMDC 및 Discord 경계
 
-LangChain 소유:
+진단 에이전트 소유:
 
-- provider/model 호출 loop
-- 이전 sanitized Evidence를 바탕으로 다음 등록 Tool 선택
-- Agent-visible schema 범위 안의 Tool argument 제안
-- Report narrative draft 생성: suspected cause 가설
+- 제공자/모델 조사 순환
+- 이전 정제된 증거를 바탕으로 다음 등록 도구 선택
+- 에이전트 표시 스키마 범위 안의 도구 인수 제안
+- 버전이 있고 정제된 `DiagnosisResult`의 1차 발견/원인/검사 힌트 생성
+
+리포트 에이전트 소유:
+
+- PRD 06의 정확한 버전 관리 `ReportAgentInput` 해석
+- `problem_detected`일 때 `suspected_cause` 본문 하나의 크기가 제한된 초안 생성
+
+리포트 에이전트는 도구를 받지 않고 진단 에이전트에 추가 조사를 요청하지 않는다.
+원시 제공자/원천 출력, 자격 증명, 환경 설정, 엔드포인트/질의, Discord
+클라이언트와 정본 리포트 상태/관찰 결과/조치를 보거나 결정하지 않는다.
 
 AMDC 소유:
 
-- REST API, 인증, request/run ID
-- Run lifecycle, queue admission, SQLite persistence
-- immutable Run environment와 enabled-environment allowlist
-- static Tool Registry, Tool Core와 source adapter
-- call/model/time/size budget와 실제 취소
-- secret scan, redaction, Evidence normalization
-- 결과 상태·fixed summary·detected problem·canonical observations·fixed next action·
-  permission flag 조립, Report schema 및 semantic validation
-- logs, metrics, retention, startup/shutdown recovery
+- REST API와 Discord 얇은 진입점, 인증/허용 목록, 요청/Run ID
+- Run 수명주기, 큐 접수, SQLite 영속화
+- 변경 불가 Run 환경과 활성화된 환경 허용 목록
+- 정적 도구 레지스트리, 도구 코어와 원천 어댑터
+- 에이전트별 호출/모델/시간/크기 예산과 실제 취소
+- 인계 스키마/버전/동일 Run 검증, 비밀정보 검사, 정제, 증거 정규화
+- 결과 상태·고정 요약·탐지된 문제·정본 관찰 결과·고정 후속 조치·
+  권한 플래그 조립, 리포트 스키마/의미/비밀정보 검증
+- 원자적 리포트 영속화, 영속화된 리포트 읽기, Discord 투영/전달 순서
+- 로그, 지표, 보존, 시작/종료 복구
 
-LangChain Tool wrapper는 오직 Tool Core를 호출한다. source adapter, process
-environment, credential resolver에 직접 접근하지 않는다. LangChain 내부 구현이
-LangGraph를 사용하더라도 P0는 별도 custom graph/checkpoint/resume 계약을 만들지
+Discord 어댑터는 기존 Gateway/Slash Command를 보존하는 얇은 어댑터다. 서버 소유
+환경으로 같은 애플리케이션 접수/조정 서비스를 호출하고, 저장되고 검증된 리포트를
+결정적 일반 텍스트로 투영해 한 번 전달한다. 에이전트/도구/리포트 정책, 원시 산출물
+또는 자격 증명을 소유하지 않는다.
+
+LangChain 도구 래퍼는 오직 도구 코어를 호출한다. 원천 어댑터, 프로세스 환경,
+자격 증명 해석기에 직접 접근하지 않는다. LangChain 내부 구현이 LangGraph를
+사용하더라도 P0는 별도 사용자 정의 그래프/체크포인트/재개 계약을 만들지
 않는다.
 
 ## 확정 결정
 
 | 항목 | P0 결정 |
 |---|---|
-| 제품 형태 | 여러 운영자가 공유하는 단일 HTTP server |
-| Entry surface | REST API only |
-| Runtime | Node.js 20+ / TypeScript strict mode, single process |
-| HTTP framework | Fastify |
-| Agent runtime | LangChain.js v1 public `createAgent` API |
-| Structured output | internal suspected-cause draft `responseFormat` + AMDC final assembly |
-| LLM runtime | OpenAI ChatModel adapter, model은 명시적 환경 설정 |
-| Tool 구조 | TypeScript static Tool Registry + Tool Core |
-| MCP | server/client/transport/discovery 모두 사용하지 않음 |
-| 저장소 | SQLite single file + repository interface |
-| 배포 | single process, single replica |
-| 인증 | health endpoint 외 shared Bearer token |
-| 환경 | dev 기본, prod는 명시적으로 enable할 때만 허용 |
+| 제품 형태 | 여러 운영자가 공유하는 단일 프로세스 서버 + 선택적 Discord Gateway 어댑터 |
+| 진입 표면 | 정본 REST API + 기존 Discord `/diagnose` 얇은 어댑터 |
+| 실행 환경 | Node.js 20+ / TypeScript 엄격 모드, 단일 프로세스 |
+| HTTP 프레임워크 | Fastify |
+| 에이전트 실행 환경 | 분리된 진단 에이전트 + 도구 없는 리포트 에이전트. LangChain.js v1 공개 API |
+| 구조화된 출력 | 의심 원인 전용 `ReportNarrativeDraftV1` + AMDC가 만든 버전이 있는 `ReportAgentOutputV1` + 최종 조립 |
+| LLM 실행 환경 | OpenAI ChatModel 어댑터, 모델은 명시적 환경 설정 |
+| 도구 구조 | TypeScript 정적 도구 레지스트리 + 도구 코어 |
+| MCP | 서버/클라이언트/전송/탐색 모두 사용하지 않음 |
+| 저장소 | SQLite 단일 파일 + 저장소 인터페이스 |
+| 배포 | 단일 프로세스, 단일 복제본 |
+| 인증 | REST는 상태 확인 외 공용 Bearer 토큰. Discord는 설정된 길드/애플리케이션 어댑터 |
+| 환경 | 활성 환경 허용 목록은 `dev` 기본. 환경 입력이 없는 진입점은 기본값 없는 명시적 서버 선택값 사용 |
 | 첫 시나리오 | `backend_5xx_increase` |
-| 결과 | canonical sanitized Evidence + 7-field JSON Report |
-| Live source mapping | PRD 05 versioned source contract; 현재 design gate |
+| 결과 | 정본 증거 + 검증되고 영속화된 7필드 리포트 + 선택적 Discord 투영 |
+| 실시간 원천 매핑 | PRD 05의 버전이 있는 원천 계약. 현재 설계 게이트 |
 
-`langchain`, provider package와 transitive dependency는 구현 시 lockfile로 exact
-version을 고정한다. PRD는 public API 계약에만 의존하며 minor upgrade는 schema,
-budget, tool-call, structured-output contract test를 다시 통과해야 한다.
+`langchain`, 제공자 패키지와 전이 의존성은 구현 시 잠금 파일로 정확한
+버전을 고정한다. PRD는 공개 API 계약에만 의존하며 소규모 버전 갱신은 스키마,
+예산, 도구 호출, 구조화 출력 계약 테스트를 다시 통과해야 한다.
+
+`develop@71f2069`의 YAML 목록/런타임과 전체 도구 노출은 PR #5·#6의
+상위/전환 구현이다. 삭제하거나 재구현하지 않지만 별도 합의 전 위
+정적 도구 레지스트리 현재 계약을 대체하지 않는다. PRD 06이 이 매핑과
+리포트 측 호환 경계를 소유한다.
 
 공식 구현 참고 문서:
 
-- [LangChain JavaScript Agents](https://docs.langchain.com/oss/javascript/langchain/agents)
-- [LangChain JavaScript Structured Output](https://docs.langchain.com/oss/javascript/langchain/structured-output)
+- [LangChain JavaScript 에이전트](https://docs.langchain.com/oss/javascript/langchain/agents)
+- [LangChain JavaScript 구조화 출력](https://docs.langchain.com/oss/javascript/langchain/structured-output)
 
-## Runtime Configuration Contract
+## 실행 환경 설정 계약
 
-P0 runtime은 process environment 또는 deployment secret injection만 사용한다.
-tracked `.env`, YAML plugin catalog, credential file은 current 설정 계약이 아니다.
+P0 런타임은 프로세스 환경 또는 배포 비밀정보 주입만 사용한다.
+추적되는 `.env`, YAML 플러그인 목록, 자격 증명 파일은 현재 설정 계약이 아니다.
 
-Required base settings:
+Discord `/diagnose`의 Run 환경 선택에는 기존 `AMDC_ENVIRONMENT`를 유지한다.
+이 선택은 현재 Discord 어댑터의 서버 소유 입력을 그대로 명시화하고 기존 명시
+배포의 키 변경을 피하면서, REST가 `dev,prod`를 동시에 허용하는 경우에도 Discord
+Run 하나를 모호하지 않게 고정한다. 단, 기존의 암묵적 `dev` 대체는 계약에서
+제거한다.
 
-- `AMDC_AUTH_TOKEN`: `/v1` shared Bearer token
-- `AMDC_DATABASE_PATH`: SQLite file path
-- `AMDC_DIAGNOSTIC_RUNNER`: `langchain` 또는 explicit local `mock`
-- `AMDC_AGENT_MODEL`: LangChain Diagnostic Agent model ID; `langchain` runner에서는 필수
+검토한 대안과 반전 조건:
+
+| 후보 | 현재 판정 | 패배 조건과 추천 반전 조건 |
+|---|---|---|
+| 기존 `AMDC_ENVIRONMENT` 유지 | 선택 | Discord 외에 환경 입력이 없는 서버 진입점이 생겨 같은 프로세스에서 서로 다른 고정 환경을 요구하거나, 이 키가 Discord와 양립할 수 없는 별도 의미를 갖게 되면 전용 키로 분리 |
+| `AMDC_DISCORD_ENVIRONMENT` 도입 | 보류 | 현재는 같은 의미의 키를 중복해 충돌 상태와 마이그레이션만 늘림. 위와 같이 독립 선택값이 둘 이상 필요해지면 이 후보로 반전 |
+| 활성 환경이 하나일 때만 자동 선택 | 기각 | 허용 목록과 선택값을 합쳐 유효한 `dev,prod` 서버를 불필요하게 막음. 프로세스당 활성 환경을 정확히 하나로 제한하고 `dev,prod` 허용을 폐기할 때만 재검토 |
+
+Discord 환경 선택 관련 설정:
+
+| 설정 | 기본값 | 필수 조건 | 검증 |
+|---|---|---|---|
+| `AMDC_DISCORD_ENABLED` | 미설정 시 `false` | 항상 파싱 | 정확히 `true` 또는 `false`; 빈 값과 그 밖의 값은 무효 |
+| `AMDC_ENABLED_ENVIRONMENTS` | 미설정 시 `dev` | 항상 파싱 | 외곽 공백 제거 뒤 정확히 `dev` 또는 `dev,prod`; 명시적 빈 값, 역순, 중복, 항목 내부 공백은 무효 |
+| `AMDC_ENVIRONMENT` | 없음 | Discord 활성 시 명시적으로 필수 | 제공된 값은 활성 여부와 관계없이 정확히 `dev` 또는 `prod`이고 허용 목록의 멤버여야 함 |
+| `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID` | 없음 | Discord 활성 시 세 값 모두 필수 | 존재 여부만 시작 검증에 사용하며 값은 오류나 로그에 기록하지 않음 |
+
+그 밖의 필수 기본 설정(`langchain` 모드 기준; `mock`은 아래 예외 적용):
+
+- `AMDC_AUTH_TOKEN`: `/v1` 공용 Bearer 토큰
+- `AMDC_DATABASE_PATH`: SQLite 파일 경로
+- `AMDC_DIAGNOSTIC_RUNNER`: `langchain` 또는 명시적 로컬 `mock`
+- `AMDC_AGENT_MODEL`: 진단/리포트 에이전트가 공유하는 모델 ID. `langchain`에서는 필수
 - `OPENAI_API_KEY`: `AMDC_DIAGNOSTIC_RUNNER=langchain`인 경우 필수
-- `AMDC_ENABLED_ENVIRONMENTS`: 기본 `dev`, 허용값 `dev` 또는 `dev,prod`
 
-각 enabled environment는 다음 server-owned source 설정을 가져야 한다.
+`AMDC_ENVIRONMENT`의 P0 소비자는 Discord `/diagnose`뿐이며 REST
+`POST /v1/runs`의 `environment` 기본값으로 사용하지 않는다.
+
+Discord를 활성화하면 `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`가 모두
+필수다. 토큰은 배포 비밀정보이고 클라이언트/길드 ID도 에이전트 입력, 리포트, 기본
+로그에 넣지 않는다.
+
+`AMDC_ENABLED_ENVIRONMENTS`는 허용 목록이며 Discord 환경 선택값이 아니다.
+`AMDC_ENVIRONMENT`가 누락됐을 때 `dev`, 활성 환경의 첫 값 또는 유일한 값을
+대체값으로 사용하지 않는다. Discord가 비활성 상태여도 `AMDC_ENVIRONMENT`가
+제공되면 값과 허용 목록 멤버십을 검증한다.
+
+검증 순서는 (1) Discord 활성 플래그, (2) 활성 환경 허용 목록, (3) Discord 선택값의
+필수 여부·문법·허용 목록 멤버십, (4) Discord 활성 시 세 자격 증명의 존재 여부,
+(5) 모든 활성 환경의 원천 설정 순서다. 모든 검증은 HTTP 수신, Discord 명령 등록과
+로그인보다 먼저 끝낸다. 해당 실행 모드에서 필수인 설정의 누락, 지원하지 않는 값
+또는 허용 목록 불일치는 프로세스 시작을 중단한다. 시작 오류는 실제 설정 키,
+환경 값, 자격 증명을 기록하지 않고 고정된 사유 코드만 기록한다.
+
+선택된 환경은 AMDC가 소유하는 변경 불가 Run 환경과 도구 코어 내부
+`ToolExecutionContext`/`ToolRuntimeContext`에만 사용한다. 진단/리포트 에이전트
+입력·프롬프트, 정본 리포트, Discord 투영과 기본 로그에는 환경 값이나 환경 변수
+키를 포함하지 않는다. Discord 명령이나 에이전트 입력으로 선택된 환경을 변경할
+수 없다.
+
+`develop@71f2069`까지 사용된 `AMDC_ENVIRONMENT` 키 이름은 유지하므로 명시값을
+사용하던 배포에는 이름 변경이 없다. 다만 키 누락을 `dev`로 대체하던 동작은 현재
+계약이 아니다. 암묵적 기본값에 의존한 배포는 새 런타임 배포 전에 운영자가 확인한
+목표 환경을 명시해야 한다. 배포 사전 점검은 설정 키의 존재 여부만 확인하고 실제
+환경 값이나 자격 증명을 수집하거나 기록하지 않는다.
+
+기존 런타임은 Discord를 항상 시작하지만 현재 계약에서 미설정
+`AMDC_DISCORD_ENABLED`는 안전한 비활성 상태다. 기존 Discord 배포가 동작을 계속하려면
+새 런타임 활성화 단계에서 `true`를 명시해야 하며, 자격 증명 존재 여부로 활성 의도를
+추정하지 않는다.
+
+각 활성 환경은 다음 서버 소유 원천 설정을 가져야 한다.
 
 - `AMDC_<ENV>_PROMETHEUS_URL`
 - `AMDC_<ENV>_LOKI_URL`
 - `AMDC_<ENV>_BACKEND_URL`
-- 각 source의 `AMDC_<ENV>_<SOURCE>_AUTH_MODE`: `none | bearer`
-- auth mode가 bearer이면 `AMDC_<ENV>_<SOURCE>_BEARER_TOKEN`
+- 각 원천의 `AMDC_<ENV>_<SOURCE>_AUTH_MODE`: `none | bearer`
+- 인증 모드가 `bearer`이면 `AMDC_<ENV>_<SOURCE>_BEARER_TOKEN`
 
 `<ENV>`는 `DEV | PROD`, `<SOURCE>`는 `PROMETHEUS | LOKI | BACKEND`다. URL은
-userinfo, query, fragment를 허용하지 않고 prod는 HTTPS만 허용한다. credential은
-deployment secret으로 주입하며 Agent에 env key 이름이나 값을 노출하지 않는다.
+사용자 정보, 질의, 조각을 허용하지 않고 `prod`는 HTTPS만 허용한다. 자격 증명은
+배포 비밀정보로 주입하며 에이전트에 환경 키 이름이나 값을 노출하지 않는다.
 
-enabled environment의 URL/필수 credential, auth token, DB path, LangChain provider
-설정이 누락되면 startup을 중단한다. explicit local `mock` runner는 Discord 연결 등
-외부 API 없는 wiring 확인에만 사용한다. fake로 자동 fallback하지 않는다.
+활성 환경의 URL/필수 자격 증명, 인증 토큰, DB 경로, LangChain 제공자와
+활성 Discord 설정이 누락되면 시작을 중단한다. 진단 에이전트와 리포트 에이전트는
+같은 설정된 모델 어댑터를 쓰더라도 서로 다른 포트, 프롬프트 버전, 호출
+예산과 메시지 상태를 갖는다. 별도 리포트 모델 선택은 P0 비목표다.
 
-## P0 Scenario Admission
+한 Run 안에서 동일 에이전트의 모든 모델 호출은 Run에 고정된 하나의 프롬프트
+버전만 사용한다. 저장 필드와 `null` 의미는 PRD 01, 호출 시점의 버전 검증은
+PRD 02와 PRD 06, 구조화 로그 투영은 PRD 03이 소유한다.
 
-`POST /v1/runs`는 `scenario=backend_5xx_increase`만 받는다. `problem`은 해당
-시나리오의 시간·증상·운영 맥락을 자연어로 보충한다. 다른 scenario는 Run을
+명시적 로컬 `mock`은 Discord 연결 확인에만 사용하며 정본 P0 Run/리포트를 만들지 않는다.
+이 모드에서는 HTTP 서버 자체를 열지 않는다(`POST /v1/runs`, 조회 API, `/healthz` 모두
+미노출). SQLite 초기화·마이그레이션·복구, 대기열 및 진단/리포트 제공자도 시작하지
+않는다. 따라서 `AMDC_AUTH_TOKEN`, `AMDC_DATABASE_PATH`, 모델/제공자와 실제 원천
+설정은 필수가 아니며 이를 읽어 연결하지 않는다. 모드, Discord 활성 플래그,
+환경 허용 목록과 제공된 환경 선택값 검증은 유지하고, Discord 활성 시 선택값과
+세 Discord 자격 증명은 계속 필수다. 시작 검증의 원천 설정 단계만 건너뛴다.
+HTTP를 열고 임의의 mock 오류를 반환하는 대안은 연결 확인 범위를 넓히므로 사용하지
+않는다. 연결 확인의 분기·고정 안내·금지 호출은 PRD 06의 「mock 연결 확인 경계」가 소유한다.
+핵심/리포트
+단위·통합 테스트의 가짜 구현은 같은 운영 포트와 스키마 검증기를 통과하는
+테스트 전용 의존성이며 운영 환경에서 모의/가짜 구현으로 자동 대체하지 않는다.
+
+## P0 시나리오 접수
+
+`langchain` 모드에서 제공하는 `POST /v1/runs`는 `scenario=backend_5xx_increase`만 받는다. `problem`은 해당
+시나리오의 시간·증상·운영 맥락을 자연어로 보충한다. 다른 시나리오는 Run을
 만들지 않고 `422 unsupported_scenario`로 거절한다. 자연어만으로 임의 장애 유형을
-분류하거나 추가 Tool을 동적으로 발견하는 기능은 P0가 아니다.
+분류하거나 추가 도구를 동적으로 발견하는 기능은 P0가 아니다.
+
+`langchain` 모드의 Discord `/diagnose symptom:<text>`는 별도 진단 경로가 아니다. 명시적 로컬 `mock` 연결 확인은 이 정본 진단 경로의 예외이며 진단/리포트 성공을 뜻하지 않는다. 어댑터가 증상을
+같은 애플리케이션 접수 서비스의 `problem`으로, 시나리오를
+`backend_5xx_increase`로, 환경을 서버 소유 값으로 매핑한다. REST와 같은
+길이/비밀정보 검사/대기열/Run 불변조건을 통과하지 못하면 진단/리포트 에이전트와
+Discord 리포트 전달을 호출하지 않는다. 상호작용/사용자/길드 원문은
+ReportAgentInput이나 정본 리포트에 포함하지 않는다.
 
 ## 포함 범위
 
@@ -196,37 +312,46 @@ enabled environment의 URL/필수 credential, auth token, DB path, LangChain pro
 - Bearer 인증과 input pre-scan
 - Run 생성, 목록, 상태, sanitized Evidence, Report 조회
 - SQLite migration과 repository
-- bounded in-process queue
-- LangChain.js Diagnostic Agent
-- OpenAI provider adapter와 test-only fake model
-- static Tool Registry와 Tool Core
-- 첫 시나리오 read-only Tool 3개
-- Evidence normalization, Tool Error sanitization, redaction
-- canonical Evidence/Report validation과 semantic result guard
-- canonical sanitized Tool Error validation
-- structured logs와 최소 metrics
-- fixture test; source contract 확정 뒤 dev read-only smoke
+- 크기가 제한된 프로세스 내 대기열
+- LangChain.js 진단 에이전트
+- 버전이 있는 진단-리포트 인계와 도구 없는 리포트 에이전트
+- OpenAI 제공자 어댑터와 테스트 전용 가짜 모델
+- 정적 도구 레지스트리와 도구 코어
+- 첫 시나리오의 읽기 전용 도구 3개
+- 증거 정규화, 도구 오류 정제, 비식별화
+- 정본 증거/리포트 검증과 의미 결과 보호 규칙
+- 정본 정제 도구 오류 검증
+- 기존 Discord Gateway/Slash Command 얇은 어댑터와 영속화된 리포트 투영
+- Report 생성과 Discord 전달의 분리된 안전 로그/메트릭 결과
+- 구조화된 로그와 최소 지표
+- 고정 데이터 테스트. 원천 계약 확정 뒤 개발 환경 읽기 전용 간이 점검
 
 ## 명시적 비목표
 
-- MCP server/client/compatibility/transport/discovery
-- YAML dynamic plugin loading
-- 제품 CLI와 Web UI
-- custom LangGraph state machine, checkpoint, resume
-- distributed queue와 multi-replica
-- user account, RBAC, SSO
-- Trigger, scheduler, webhook, notification
-- RAG, vector DB, 과거 장애 similarity search
-- approval execution, mutation, remediation
-- shell, SSH, provider CLI, arbitrary SQL/HTTP
-- restart, deploy, delete, config 변경
+- MCP 서버/클라이언트/호환성/전송/탐색
+- YAML 동적 플러그인 적재
+- 제품 CLI와 웹 UI
+- 사용자 정의 LangGraph 상태 기계, 체크포인트, 재개
+- 분산 대기열과 다중 복제본
+- 사용자 계정, RBAC, SSO
+- Trigger, 스케줄러, 웹훅, 범용 외부 알림
+- Discord 임베드/다중 메시지, 자동 전달 재시도, 재전달 API와 전달 토큰 저장
+- 리포트 에이전트의 도구 접근, 추가 진단 피드백 순환, 별도 모델/제공자 선택
+- RAG, 벡터 DB, 과거 장애 유사도 검색
+- 승인 실행, 변경 작업, 복구 조치
+- 셸, SSH, 제공자 CLI, 임의 SQL/HTTP
+- 재시작, 배포, 삭제, 설정 변경
 - MySQL, ProxySQL, backup 장애 시나리오 확장
-- Run cancellation과 automatic request deduplication
+- Run 취소와 자동 요청 중복 제거
 
-## 후속 Phase
+`develop@71f2069`의 Discord/Diagnostic/YAML 코드를 삭제·재작성하거나 static/YAML
+runtime 결정을 끝내는 작업은 R0 비목표다. R0는 PRD와 ownership/reuse mapping만
+변경하며 필요한 향후 어댑터/호출 지점 변경은 별도 담당자 검토 이슈로 분리한다.
 
-- P1: Report review Web UI, identity/RBAC, PostgreSQL 검토
-- P2: Trigger/scheduler, idempotency key, distributed queue, cancellation
+## 후속 단계
+
+- P1: Report 검토 웹 UI, identity/RBAC, PostgreSQL 검토
+- P2: Trigger/스케줄러, 멱등성 키, 분산 대기열, 취소
 - P3: 과거 장애 검색/RAG
 - P4: 별도 승인 계약 이후 제한된 조치 검토
 
