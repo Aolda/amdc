@@ -1,7 +1,9 @@
 # PRD 06. 상위 진단 구성요소 및 리포트 에이전트 인계
 
+진단과 리포트의 인계·소유권을 정의한다. 정본 흐름에는 계약 준수가 검증된 진단 포트만 연결하며, mock 연결 확인은 별도 고정 안내로 끝낸다. 기존 시제품의 미준수와 최신 리뷰 보정은 팀 검토 대상이다.
+
 상태: 현재 개정본
-최종 검토: 2026-09-04
+최종 검토: 2026-09-11 (리뷰 보정안, 팀 승인 대기)
 리포트 핸드오프 게이트 상태: ready_for_implementation
 진단 런타임 정합화 게이트 상태: ready_for_design
 소유: 버전이 있는 진단-리포트 인계, 리포트 에이전트 예산, 구성요소 소유권,
@@ -89,7 +91,7 @@ PR #6 (`71f2069`). 병합/빌드 사실은 시제품 증거이며 리포트 완�
 | 기존 컴포넌트 | 증거 | 분류 | 향후 작업 규칙 |
 |---|---|---|---|
 | Discord 봇/Gateway 및 `/diagnose` | `src/adapters/discord/bot.ts`, PR #3 | **유지 · 재경 상위 구성요소** | 진입/출력을 유지하고 영속화된 리포트 전달만 연결 |
-| 진단 에이전트 및 파이프라인 | `src/app/diagnosis-pipeline.ts`, `src/agent/langchain-diagnostic-agent.ts`, PR #5 | **유지 · 재경 상위 구성요소** | 내부를 바꾸지 않고 호환 어댑터 사용 |
+| 진단 에이전트 및 파이프라인 | `src/app/diagnosis-pipeline.ts`, `src/agent/langchain-diagnostic-agent.ts`, PR #5 | **유지 · 재경 상위 구성요소** | 현 구현을 그대로 호출하지 않음. 상위 담당자의 PRD 02 준수 검증 후 포트를 주입하고 호환 어댑터로 출력 검증 |
 | YAML 목록/런타임 및 상태 확인 어댑터 | `src/tools/catalog-loader.ts`, `src/tools/yaml-tool-runtime.ts`, PR #5/#6 | **상위/전환 구현** | 보존. 정적/YAML 결정은 별도로 유지 |
 | 임시 진단 표시 계층 | `src/report/temporary-diagnostic-presenter.ts` | **조정 · 동훈 접점** | 과도기 전용. 정본 리포트 아님 |
 | Discord 포매터 | `src/adapters/discord/format-report.ts` | **조정 · 동훈 접점** | 영속화된 7필드 리포트 입력만 사용 |
@@ -101,6 +103,8 @@ R1이 숨겨서는 안 되는 호환성 사실:
 - 현재 `ToolObservation`은 PRD 03 canonical Evidence가 아니다;
 - 현재 관찰 결과와 도구 오류가 분리되어 호출이 섞인 순서가 유실된다.
 - 현재 에이전트는 플러그인이 선택한 도구가 아니라 `registry.listAllTools()`를 노출한다.
+- 현재 `LangChainDiagnosticAgent`는 `buildSystemPrompt(input.environment)`로 환경 값을 모델에 노출한다. 출력 어댑터의 정제만으로 이미 전송된 입력을 회수할 수 없으므로 현재 `runDiagnosis()`를 정본 흐름에서 직접 재사용하지 않는다.
+- 현재 `MockDiagnosticRunner`는 `diagnosis` 없이 임시 `presentation`만 반환하고 그 안에 환경 값도 포함한다. 이를 정본 인계나 사용자 안내의 원문으로 사용하지 않는다.
 - 현재 임시 표시 계층은 모든 도구 오류가 양성 관찰 결과를 덮어쓰도록 한다.
 - 현재 포매터는 임시 4필드 형식을 사용하며 접미사가 명목상 1,900자
   잘라내기 범위를 초과할 수 있다.
@@ -122,12 +126,14 @@ R1이 숨겨서는 안 되는 호환성 사실:
 
 1. 새 `src/app/report-flow.ts`의 `runReportFlow()`가 정본 애플리케이션
    접수/조정기에 먼저 진입해 대기열/Run 불변조건을 검증하고 영속화된 Run
-   문맥을 얻는다. 그 뒤 기존 공개 `runDiagnosis()`를 호출하고 반환된
-   `diagnosis`를 신뢰하지 않는 입력으로 어댑터에 넘긴다. 임시 `presentation`은
+   문맥을 얻는다. 그 뒤 PRD 02의 입력·프롬프트·도구 정책 준수가 검증된
+   `DiagnosticAgentPort`를 의존성으로 받아 호출하고, 반환된 진단 DTO를 신뢰하지 않는
+   입력으로 호환 어댑터에 넘긴다. 현재 `runDiagnosis()`나 기존 동명 TypeScript
+   인터페이스와의 형식 일치만으로 준수를 인정하지 않는다. 임시 `presentation`은
    정본 입력으로 사용하지 않는다.
 2. `src/adapters/discord/bot.ts`의 `handleDiagnoseCommand()`에서
    `runDiagnosis(...) -> formatDiagnosticPresentation(result.presentation) -> editReply`
-   호출 사슬만 `runReportFlow(...) -> persisted Report projection -> editReply`로 바꾼다.
+   호출 사슬을 `langchain` 모드에서만 `runReportFlow(...) -> persisted Report projection -> editReply`로 바꾼다. 명시적 로컬 `mock`은 아래 연결 확인 분기로 먼저 종료한다.
 3. Gateway 로그인/등록, 명령 스키마, 입력 추출, 서버 소유 환경과
    `deferReply`는 재경 상위 구성요소로 유지한다. 안전 오류 내용/정규화도
    재사용하되 `handleDiagnoseCommand()` 오류 경계는 전달 단계를 구분하는 최소
@@ -139,6 +145,39 @@ R1이 숨겨서는 안 되는 호환성 사실:
 `src/app/diagnosis-pipeline.ts`, `src/agent/**`, 도구 선택/실행, YAML 목록/런타임,
 목록 패키징과 원천 어댑터 변경은 이 접점 권한에 포함되지 않는다.
 임시 표시 계층 제거는 검증된 전환 뒤 별도 결정이다.
+
+### 진단 포트 연결 전제조건
+
+상위 담당자가 PRD 02의 모델 가시 메시지 환경값 금지, 정적 도구 정책과 prompt
+version 고정을 검증한 뒤 운영 진단 포트를 연결한다. 현재 `runDiagnosis()`를 호출한 뒤
+출력만 정제하는 우회는 금지한다. 그 전에는 명시적 테스트 의존성으로 주입한 가짜
+진단 포트와 가짜 도구만으로 R1 인계를 검증하며, 운영 모드의 누락·미검증 포트는
+시작 시 거부한다. 실제 포트 호출 실패를 가짜 구현으로 자동 대체하지 않는다.
+
+이 선행조건의 진단 내부 수정은 재경 상위 작업으로 검토한다. R0나 리포트 측
+R1-R5의 파일 권한을 확장하지 않고, #4의 출력 포트만 완료됐다는 이유로 충족됐다고
+간주하지 않는다. 정적/YAML 결정도 여전히 별도다.
+
+### mock 연결 확인 경계
+
+명시적 로컬 `AMDC_DIAGNOSTIC_RUNNER=mock`은 기존 연결 확인 목적을 유지한다.
+`handleDiagnoseCommand()`는 설정/입력 검증과 기존 `deferReply` 뒤, `runReportFlow()`
+진입 전에 이 분기를 판정하고 다음 고정 안내를 `editReply`로 한 번만 보낸다.
+
+~~~text
+[MOCK 연결 확인] Discord 연결이 확인되었습니다. 진단을 실행하거나 리포트를 저장하지 않았습니다.
+~~~
+
+`runDiagnosis()`, `MockDiagnosticRunner`, 진단/리포트 에이전트, 원천 호출과 정본
+Run/Evidence/Report 쓰기는 모두 0회다. `presentation`의 증상·환경·원시 필드를
+복사하지 않고 `diagnosis`가 있다고 가정하지 않는다. 안내 전송 실패 시 두 번째
+`editReply`를 호출하지 않는다. 이 분기는 P0 진단 결과나 `completed` Run이 아니며
+PRD 03의 리포트 전달 이벤트로 기록하지 않는다. 정본 리포트용 포매터와 분리된
+연결 안내이고, 테스트는 가짜 Discord를 사용한다. 실제 Discord 연결 확인은 별도
+승인된 로컬 확인에서만 실행한다. 기존 mock/임시 표시 모듈은 삭제하지 않는다.
+
+mock에서 정본 인계까지 검증하는 대안은 기존 연결 확인의 범위를 넓힌다. 정본
+종단 간 테스트는 PRD 02/04의 주입된 가짜 진단·도구·리포트 포트로 따로 검증한다.
 
 ## 단방향 핸드오프 흐름
 

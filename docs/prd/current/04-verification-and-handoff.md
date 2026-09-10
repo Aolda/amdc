@@ -1,7 +1,9 @@
 # PRD 04. 검증 및 구현 인계
 
+P0 계약의 검증 환경·실패 주입·인계·완료 기준을 정의한다. 스키마 상수, 검증된 진단 포트, mock 연결 확인 분기를 별도로 검증하며 제품 구현 완료를 뜻하지 않는다. 최신 리뷰 보정은 팀 승인 대기다.
+
 상태: 현재
-최종 검토: 2026-09-04
+최종 검토: 2026-09-11 (리뷰 보정안, 팀 승인 대기)
 핵심 계약 게이트 상태: ready_for_implementation
 리포트 전달 계약 게이트 상태: ready_for_implementation
 전달 상태: not_started
@@ -151,6 +153,11 @@ Node/TypeScript 테스트 골격, 정본 증거/도구 오류/리포트와 PRD 0
 | PRD 00/04 | Discord 활성 + 유효한 선택값 + Discord 자격 증명 하나 이상 누락 | Run 없음, 시작 중단 | 누락 키·값 노출 0, 모든 네트워크 호출 0 |
 | PRD 00/04 | `/diagnose` 명령 스키마 검사 또는 환경 선택 인수가 포함된 위조 상호작용 | Run 없음 | 등록 스키마에는 `symptom`만 존재, 서버 선택값 변경 0, 에이전트 호출 0 |
 | PRD 00/02/04/06 | 환경 문자열이 없는 증상으로 정상 Discord Run 실행 | 계약 상태 유지 | 진단·리포트 모델 메시지, DiagnosisResult, ReportAgentInput, 정본 리포트, Discord 출력, 기본 로그에서 선택 환경 값 일치 0 |
+| PRD 02/06 | 운영 모드에서 미검증 또는 누락된 진단 포트 연결 | Run 없음, 시작 거부 | 기존 `runDiagnosis()` 직접 호출/모델 호출/가짜 자동 대체 0 |
+| PRD 02/06 | 검증 대상 진단 포트의 모든 모델 가시 메시지를 가짜 제공자로 포착 | 해당 시나리오 상태 | 서버 환경 문자열 없는 입력에서 환경값·환경 키 일치 0, PRD 02 prompt version·도구 정책 충족 |
+| PRD 00/06 | 명시적 로컬 mock 연결 확인을 가짜 Discord로 실행 | 정본 Run/리포트 없음 | PRD 06 고정 안내 1회, 진단/리포트/원천 호출 및 정본 DB 쓰기 0, 환경값 노출 0 |
+| PRD 00/06 | mock 고정 안내의 `editReply` 실패 | 정본 Run/리포트 없음 | 두 번째 `editReply` 및 정본 리포트 전달 이벤트 0 |
+| PRD 03 | 네 상태의 고정 요약·후속 조치를 문서 표에서 읽어 schema 1.1.0과 비교 | 문서 검증 | 8개 문자열의 `const` 불일치 0; 네 상태의 최소 7필드 리포트 스키마 검증 통과 |
 | PRD 00/01 | 지원하지 않는 시나리오 | Run 없음 | 422 `unsupported_scenario` |
 | PRD 01/03 | 비밀정보가 포함된 입력 | Run 없음 | 422, 제공자/DB 전달 0 |
 | PRD 01 | 접수 포화 | 수락 또는 429 | 수락 요청만 DB 행 보유 |
@@ -279,8 +286,8 @@ Node/TypeScript 테스트 골격, 정본 증거/도구 오류/리포트와 PRD 0
 - `package.json`, 잠금 파일, `tsconfig.json`: 고정된 런타임 및 테스트 설정
 - `src/server.ts`: 시작/종료 및 복구
 - `src/app.ts`: Fastify 구성
-- `src/app/report-flow.ts`: 먼저 영속화된 Run 문맥을 만든 뒤 기존 공개
-  `runDiagnosis()`를 호출하는 정본 애플리케이션 접수/조정 진입점.
+- `src/app/report-flow.ts`: 먼저 영속화된 Run 문맥을 만든 뒤 PRD 06의 연결
+  전제조건을 충족한 `DiagnosticAgentPort`를 주입받아 호출하는 정본 애플리케이션 접수/조정 진입점.
   신뢰하지 않는 진단 -> 인계 -> 영속화된 리포트 조정
 - `src/config/runtime-config.ts`: 현재 환경 계약 및 즉시 실패 검증
 - `src/errors/catalog.ts`: 안전한 API/Run/도구 오류 코드와 메시지
@@ -342,7 +349,7 @@ Node/TypeScript 테스트 골격, 정본 증거/도구 오류/리포트와 PRD 0
 - 계약에 없는 범용 프레임워크 추상화
 - 재경 진단/YAML 런타임 내부 재설계·삭제와 실제 원천 구현
 - R0/R1-R5 리포트 작업에서 `src/app/diagnosis-pipeline.ts`, 기존 진단
-  `src/agent/**`, 도구 선택/YAML 목록/런타임, 패키징/원천 어댑터 변경
+  `src/agent/**`, 도구 선택/YAML 목록/런타임, 패키징/원천 어댑터 변경. 운영 진단 포트의 PRD 02 준수는 상위 담당자의 별도 선행 검증이며, 리포트 접점은 PRD 06의 주입과 mock 연결 안내 분기만 담당한다.
 - 애플리케이션 수준 Discord 재시도/재전달, 전달 토큰/원장과 Discord 임베드/다중 메시지
 
 마이그레이션/롤백:
