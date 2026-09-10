@@ -163,6 +163,8 @@ Node/TypeScript 테스트 골격, 정본 증거/도구 오류/리포트와 PRD 0
 | PRD 01/03 | 비밀정보가 포함된 입력 | Run 없음 | 422, 제공자/DB 전달 0 |
 | PRD 01 | 접수 포화 | 수락 또는 429 | 수락 요청만 DB 행 보유 |
 | PRD 01/02/06 | Run 시작 뒤 서버 시계가 진행한 상태로 여러 도구와 인계 실행 | 계약 상태 유지 | 모든 도구 기준 시각과 인계 `diagnostic_reference_time`이 저장된 `started_at`과 일치, 재계산 0 |
+| PRD 02/03 | `started_at=t0`, 수신 `t0+40초`에서 `checked_at=t0` 또는 `t0+40초`인 건강 상태 응답 | 첫 응답 시간 범위 유효, 둘째 `insufficient_data` | 같은 구간의 지표/로그 음성·다른 오류 없음 조건에서 각각 `no_problem_detected`/`insufficient_tools`, 수신 시각 기준 재판정 0 |
+| PRD 02/03 | 수신 시각은 `t0+40초`로 고정하고 `checked_at`을 `t0±30초`, `t0±30.001초`로 주입 | 경계 포함 두 값 유효, 경계 밖 두 값 `insufficient_data` | 어댑터 정규화와 최종 판정에 같은 저장 기준 적용, `collected_at`은 실제 수신 시각 보존 |
 | PRD 01/02/06 | queued 상태 실패 또는 Run/도구/인계 기준 시각 불일치 | 거부 | queued 실패는 `started_at=null` 유지·포트 호출 0, 시각 불일치는 인계/리포트 제공자 호출 0 |
 | PRD 01 | `queued` 커밋 후 프로세스 중단 | 시작 후 `failed` | `server_restarted`, 리포트 없음 |
 | PRD 01 | 게시 + 실패 전이 DB 실패 | 프로세스 즉시 중단 | 202 없음, 복구 전 수신 없음 |

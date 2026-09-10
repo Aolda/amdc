@@ -238,8 +238,12 @@ PRD 05의 버전이 있는 서버 소유 원천 계약에 고정한다.
 집계이며 `unhealthy > degraded > healthy` 순서다. 알 수 없는 상태나 20개 초과로
 잘린 의존성은 `insufficient_data`다. 누락된 필수 필드는 증거가
 아니라 `malformed_source_response` 도구 오류다. 의존성 이름은 고유하다. 오래된
-`checked_at`은 `source_assessment=insufficient_data`로 정규화한다. `checked_at`이 Tool
-코어 수신 시각보다 30초 이상 과거이거나 미래이면 오래된 값이다. URL과 인증은
+`checked_at`은 `source_assessment=insufficient_data`로 정규화한다. freshness의 유일한
+비교 기준은 저장된 `runs.started_at`과 같은 `diagnosticReferenceTime`이다.
+`abs(checked_at - diagnosticReferenceTime) <= 30,000ms`이면 시간 범위가 유효하며
+양쪽 30초 경계를 포함한다. 범위를 벗어나면 오래된 값이다. 수신/재호출 시각으로
+기준을 이동하지 않는다. 이 freshness 검사는 PRD 03의 실제 수집 시각 기록 및
+`checked_at <= collected_at` 증거 시간 순서 검증을 대체하지 않는다. URL과 인증은
 PRD 05의 서버 소유 어댑터가 고정한다.
 
 ## 실시간 원천 통합 게이트
@@ -390,7 +394,7 @@ P0 리포트 상태 우선순위:
 이긴다. `no_problem_detected`는 세 도구 각각에 음성이 1개 이상 있고 그 Run에
 도구 오류나 결론 불가 증거가 하나도 없을 때만 가능하다. 지표와 로그의
 음성 구간은 같은 `diagnosticReferenceTime`과 같은 `window_minutes`여야 하며,
-상태 확인 `checked_at`은 그 참조의 ±30초 안이어야 한다. 이 검사 범위가 맞지 않으면
+상태 확인 `checked_at`은 그 참조의 ±30초 이내(경계 포함)여야 한다. 이 검사 범위가 맞지 않으면
 `insufficient_tools`다.
 예산 소진은 같은 표로 판정하며 그 자체를 정상 근거로 쓰지 않는다.
 
