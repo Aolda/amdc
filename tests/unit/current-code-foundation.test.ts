@@ -45,7 +45,14 @@ function createCatalog(): ToolCatalog {
             source: "loki",
             allowedEnvironments: ["dev"],
             timeoutMs: 5000,
-            input: { type: "object", additionalProperties: false },
+            input: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                service: { type: "string", enum: ["backend", "celery-worker"] }
+              },
+              required: ["service"]
+            },
             execution: {
               type: "source_adapter",
               operation: "recent_errors"
@@ -107,6 +114,23 @@ describe("current-code test foundation", () => {
         assert.equal(tool.access.readOnly, true);
       }
     }
+    const schema = catalog.plugins[1]?.tools[0]?.inputSchema;
+    assert.ok(schema?.properties);
+    const service = schema.properties.service;
+    assert.ok(service?.type === "string");
+    assert.ok(service.enum);
+    assert.ok(schema.required);
+    assert.equal(Object.isFrozen(schema.properties), true);
+    assert.equal(Object.isFrozen(service), true);
+    assert.equal(Object.isFrozen(service.enum), true);
+    assert.equal(Object.isFrozen(schema.required), true);
+    assert.equal(Reflect.set(schema.properties, "service", { type: "boolean" }), false);
+    assert.equal(Reflect.set(service, "type", "boolean"), false);
+    assert.equal(Reflect.set(service.enum, "0", "unexpected"), false);
+    assert.equal(Reflect.set(schema.required, "0", "unexpected"), false);
+    assert.equal(service.type, "string");
+    assert.deepEqual(service.enum, ["backend", "celery-worker"]);
+    assert.deepEqual(schema.required, ["service"]);
   });
 
   it("rejects a writable tool before a registry can expose it", () => {
