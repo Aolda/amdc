@@ -32,6 +32,26 @@ function createCatalog(): ToolCatalog {
             }
           }
         ]
+      },
+      {
+        name: "logs",
+        description: "Log checks",
+        domainHints: ["logs"],
+        tools: [
+          {
+            name: "recent_errors",
+            description: "Read recent errors",
+            access: { level: 0, readOnly: true },
+            source: "loki",
+            allowedEnvironments: ["dev"],
+            timeoutMs: 5000,
+            input: { type: "object", additionalProperties: false },
+            execution: {
+              type: "source_adapter",
+              operation: "recent_errors"
+            }
+          }
+        ]
       }
     ]
   });
@@ -73,6 +93,20 @@ describe("current-code test foundation", () => {
     assert.equal(Object.isFrozen(catalog), true);
     assert.equal(Object.isFrozen(catalog.plugins), true);
     assert.equal(Object.isFrozen(catalog.plugins[0]?.tools), true);
+    for (const plugin of catalog.plugins) {
+      assert.equal(Object.isFrozen(plugin), true);
+      assert.equal(Object.isFrozen(plugin.domainHints), true);
+      assert.equal(Object.isFrozen(plugin.tools), true);
+      for (const tool of plugin.tools) {
+        assert.equal(Object.isFrozen(tool), true);
+        assert.equal(Object.isFrozen(tool.access), true);
+        assert.equal(Object.isFrozen(tool.allowedEnvironments), true);
+        assert.equal(Object.isFrozen(tool.inputSchema), true);
+        assert.equal(Object.isFrozen(tool.execution), true);
+        assert.equal(Reflect.set(tool.access, "readOnly", false), false);
+        assert.equal(tool.access.readOnly, true);
+      }
+    }
   });
 
   it("rejects a writable tool before a registry can expose it", () => {
@@ -109,6 +143,10 @@ describe("current-code test foundation", () => {
   it("exposes only the selected plugin tools", () => {
     const registry = new PluginRegistry(createCatalog());
 
+    assert.deepEqual(
+      registry.listToolsForPlugins(["backend", "logs"]).map((tool) => tool.name),
+      ["backend_health", "recent_errors"]
+    );
     assert.deepEqual(registry.listToolsForPlugins([]), []);
     assert.deepEqual(registry.listToolsForPlugins(["backend"]), [
       {
