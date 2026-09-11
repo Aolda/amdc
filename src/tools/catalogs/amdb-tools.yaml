@@ -76,7 +76,7 @@ plugins:
             state: active
 
   - name: mysql
-    description: Tools that read MySQL server metrics and AMDB database inventory.
+    description: Tools that read MySQL schemas, connections, transactions, data-lock waits, server metrics, and AMDB database inventory.
     domainHints:
       - db
       - database
@@ -89,13 +89,292 @@ plugins:
       - 용량
       - 할당량
     tools:
+      - name: mysql_list_schemas
+        description: Read non-system MySQL schema names, default character sets and collations.
+        access:
+          level: 0
+          readOnly: true
+        source: mysql
+        allowedEnvironments:
+          - dev
+          - prod
+        timeoutMs: 5000
+        input:
+          type: object
+          additionalProperties: false
+          properties:
+            namePrefix:
+              type: string
+              description: Optional literal schema name prefix; no wildcard expansion. Omit for all visible non-system schemas.
+              minLength: 1
+              maxLength: 128
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 200
+              description: Maximum rows, integer; default 100. Overflow is marked truncated.
+        execution:
+          type: mysql_sql
+          sql: |-
+            SELECT SCHEMA_NAME AS schemaName, DEFAULT_CHARACTER_SET_NAME AS characterSet,
+                  DEFAULT_COLLATION_NAME AS collationName FROM information_schema.SCHEMATA WHERE SCHEMA_NAME NOT IN ('mysql','sys','information_schema','performance_schema')
+          orderBy: SCHEMA_NAME
+          filters:
+            - input: namePrefix
+              sql: LEFT(SCHEMA_NAME, CHAR_LENGTH(?)) = ?
+              bindings:
+                - namePrefix
+                - namePrefix
+          defaults:
+            limit: 100
+          requires: {}
+          environmentPrefix:
+            dev: AMDC_DEV_MYSQL_
+            prod: AMDC_PROD_MYSQL_
+      - name: mysql_get_processlist
+        description: Read current MySQL foreground connections, default schema, command, state, state duration and SQL text (up to 4096 characters). Idle connections are excluded by default.
+        access:
+          level: 0
+          readOnly: true
+        source: mysql
+        allowedEnvironments:
+          - dev
+          - prod
+        timeoutMs: 5000
+        input:
+          type: object
+          additionalProperties: false
+          properties:
+            schema:
+              type: string
+              description: Optional exact connection default schema, not all accessed schemas. Omit for no schema filter.
+              minLength: 1
+              maxLength: 128
+            connectionId:
+              type: string
+              description: Exact MySQL backend connection ID as a decimal string; omission leaves connections unrestricted.
+              minLength: 1
+              maxLength: 20
+              pattern: ^[0-9]{1,20}$
+            includeIdle:
+              type: boolean
+              description: Include sleeping connections; default false.
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 200
+              description: Maximum rows, integer; default 100. Overflow is marked truncated.
+        execution:
+          type: mysql_sql
+          sql: |-
+            SELECT CAST(t.PROCESSLIST_ID AS CHAR) AS connectionId, CAST(t.THREAD_ID AS CHAR) AS threadId,
+                  t.PROCESSLIST_USER AS mysqlUser, t.PROCESSLIST_HOST AS host,
+                  t.PROCESSLIST_DB AS defaultSchema, t.PROCESSLIST_COMMAND AS command,
+                  t.PROCESSLIST_STATE AS state, t.PROCESSLIST_TIME AS stateDurationSeconds,
+                  LEFT(t.PROCESSLIST_INFO, 4096) AS currentStatement,
+                  COALESCE(CHAR_LENGTH(t.PROCESSLIST_INFO) > 4096, 0) AS statementTruncated
+                  FROM performance_schema.threads t WHERE t.TYPE = 'FOREGROUND' AND t.PROCESSLIST_ID <> CONNECTION_ID()
+          orderBy: t.PROCESSLIST_TIME DESC, t.PROCESSLIST_ID
+          filters:
+            - input: schema
+              sql: t.PROCESSLIST_DB = ?
+              bindings:
+                - schema
+            - input: connectionId
+              sql: t.PROCESSLIST_ID = ?
+              bindings:
+                - connectionId
+            - input: includeIdle
+              sql: t.PROCESSLIST_COMMAND <> 'Sleep'
+              bindings: []
+              when: false
+          defaults:
+            limit: 100
+            includeIdle: false
+          requires: {}
+          environmentPrefix:
+            dev: AMDC_DEV_MYSQL_
+            prod: AMDC_PROD_MYSQL_
+      - name: mysql_get_transactions
+        description: Read active InnoDB transactions, connection IDs, start times, lock and modification counts and current SQL text (up to 4096 characters).
+        access:
+          level: 0
+          readOnly: true
+        source: mysql
+        allowedEnvironments:
+          - dev
+          - prod
+        timeoutMs: 5000
+        input:
+          type: object
+          additionalProperties: false
+          properties:
+            connectionId:
+              type: string
+              description: Exact MySQL backend connection ID as a decimal string; omission leaves connections unrestricted.
+              minLength: 1
+              maxLength: 20
+              pattern: ^[0-9]{1,20}$
+            transactionId:
+              type: string
+              description: Exact InnoDB transaction ID as a decimal string; omission leaves transactions unrestricted.
+              minLength: 1
+              maxLength: 20
+              pattern: ^[0-9]{1,20}$
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 200
+              description: Maximum rows, integer; default 100. Overflow is marked truncated.
+        execution:
+          type: mysql_sql
+          sql: |-
+            SELECT CAST(x.TRX_ID AS CHAR) AS transactionId, CAST(x.TRX_MYSQL_THREAD_ID AS CHAR) AS connectionId,
+                  t.PROCESSLIST_USER AS mysqlUser, t.PROCESSLIST_DB AS defaultSchema,
+                  x.TRX_STATE AS state, x.TRX_STARTED AS startedAt, x.TRX_WAIT_STARTED AS waitStartedAt,
+                  x.TRX_ROWS_LOCKED AS rowsLocked, x.TRX_ROWS_MODIFIED AS rowsModified,
+                  x.TRX_ISOLATION_LEVEL AS isolationLevel, LEFT(x.TRX_QUERY, 4096) AS currentStatement,
+                  COALESCE(CHAR_LENGTH(x.TRX_QUERY) > 4096, 0) AS statementTruncated
+                  FROM information_schema.INNODB_TRX x LEFT JOIN performance_schema.threads t
+                  ON t.PROCESSLIST_ID = x.TRX_MYSQL_THREAD_ID WHERE x.TRX_MYSQL_THREAD_ID <> CONNECTION_ID()
+          orderBy: x.TRX_STARTED, x.TRX_ID
+          filters:
+            - input: connectionId
+              sql: x.TRX_MYSQL_THREAD_ID = ?
+              bindings:
+                - connectionId
+            - input: transactionId
+              sql: x.TRX_ID = ?
+              bindings:
+                - transactionId
+          defaults:
+            limit: 100
+          requires: {}
+          environmentPrefix:
+            dev: AMDC_DEV_MYSQL_
+            prod: AMDC_PROD_MYSQL_
+      - name: mysql_get_all_lock_waits
+        description: Read current InnoDB data-lock waiting and blocking connection/transaction pairs across all schemas and users without filters. Returns up to 100 wait edges with a truncation flag. Does not include metadata lock waits. Takes no arguments.
+        access:
+          level: 0
+          readOnly: true
+        source: mysql
+        allowedEnvironments:
+          - dev
+          - prod
+        timeoutMs: 5000
+        input:
+          type: object
+          additionalProperties: false
+          properties: {}
+        execution:
+          type: mysql_sql
+          sql: |-
+            SELECT CAST(w.REQUESTING_ENGINE_TRANSACTION_ID AS CHAR) AS waitingTransactionId,
+                  CAST(r.PROCESSLIST_ID AS CHAR) AS waitingConnectionId,
+                  CAST(w.BLOCKING_ENGINE_TRANSACTION_ID AS CHAR) AS blockingTransactionId,
+                  CAST(b.PROCESSLIST_ID AS CHAR) AS blockingConnectionId,
+                  requested.OBJECT_SCHEMA AS objectSchema, requested.OBJECT_NAME AS objectName,
+                  requested.INDEX_NAME AS indexName, requested.LOCK_MODE AS requestedLockMode,
+                  held.LOCK_MODE AS blockingLockMode
+                  FROM performance_schema.data_lock_waits w
+                  JOIN performance_schema.data_locks requested ON requested.ENGINE = w.ENGINE
+                    AND requested.ENGINE_LOCK_ID = w.REQUESTING_ENGINE_LOCK_ID
+                  JOIN performance_schema.data_locks held ON held.ENGINE = w.ENGINE
+                    AND held.ENGINE_LOCK_ID = w.BLOCKING_ENGINE_LOCK_ID
+                  LEFT JOIN performance_schema.threads r ON r.THREAD_ID = w.REQUESTING_THREAD_ID
+                  LEFT JOIN performance_schema.threads b ON b.THREAD_ID = w.BLOCKING_THREAD_ID
+          orderBy: w.REQUESTING_ENGINE_LOCK_ID, w.BLOCKING_ENGINE_LOCK_ID
+          filters: []
+          defaults:
+            limit: 100
+          requires: {}
+          environmentPrefix:
+            dev: AMDC_DEV_MYSQL_
+            prod: AMDC_PROD_MYSQL_
+      - name: mysql_get_lock_waits
+        description: Read InnoDB data-lock waiting and blocking connection/transaction pairs and locked objects. Does not include metadata lock waits.
+        access:
+          level: 0
+          readOnly: true
+        source: mysql
+        allowedEnvironments:
+          - dev
+          - prod
+        timeoutMs: 5000
+        input:
+          type: object
+          additionalProperties: false
+          properties:
+            schema:
+              type: string
+              description: Optional exact locked object schema. Omit for no schema filter.
+              minLength: 1
+              maxLength: 128
+            table:
+              type: string
+              description: Exact locked table name within schema; requires schema.
+              minLength: 1
+              maxLength: 128
+            connectionId:
+              type: string
+              description: Exact MySQL backend connection ID on either side of the wait; omission leaves connections unrestricted.
+              minLength: 1
+              maxLength: 20
+              pattern: ^[0-9]{1,20}$
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 200
+              description: Maximum rows, integer; default 100. Overflow is marked truncated.
+        execution:
+          type: mysql_sql
+          sql: |-
+            SELECT CAST(w.REQUESTING_ENGINE_TRANSACTION_ID AS CHAR) AS waitingTransactionId,
+                  CAST(r.PROCESSLIST_ID AS CHAR) AS waitingConnectionId,
+                  CAST(w.BLOCKING_ENGINE_TRANSACTION_ID AS CHAR) AS blockingTransactionId,
+                  CAST(b.PROCESSLIST_ID AS CHAR) AS blockingConnectionId,
+                  requested.OBJECT_SCHEMA AS objectSchema, requested.OBJECT_NAME AS objectName,
+                  requested.INDEX_NAME AS indexName, requested.LOCK_MODE AS requestedLockMode,
+                  held.LOCK_MODE AS blockingLockMode
+                  FROM performance_schema.data_lock_waits w
+                  JOIN performance_schema.data_locks requested ON requested.ENGINE = w.ENGINE
+                    AND requested.ENGINE_LOCK_ID = w.REQUESTING_ENGINE_LOCK_ID
+                  JOIN performance_schema.data_locks held ON held.ENGINE = w.ENGINE
+                    AND held.ENGINE_LOCK_ID = w.BLOCKING_ENGINE_LOCK_ID
+                  LEFT JOIN performance_schema.threads r ON r.THREAD_ID = w.REQUESTING_THREAD_ID
+                  LEFT JOIN performance_schema.threads b ON b.THREAD_ID = w.BLOCKING_THREAD_ID
+          orderBy: w.REQUESTING_ENGINE_LOCK_ID, w.BLOCKING_ENGINE_LOCK_ID
+          filters:
+            - input: schema
+              sql: requested.OBJECT_SCHEMA = ?
+              bindings:
+                - schema
+            - input: table
+              sql: requested.OBJECT_NAME = ?
+              bindings:
+                - table
+            - input: connectionId
+              sql: (r.PROCESSLIST_ID = ? OR b.PROCESSLIST_ID = ?)
+              bindings:
+                - connectionId
+                - connectionId
+          defaults:
+            limit: 100
+          requires:
+            table: schema
+          environmentPrefix:
+            dev: AMDC_DEV_MYSQL_
+            prod: AMDC_PROD_MYSQL_
       - name: mysql_get_service_status
         description: Read the MySQL availability value, version information, and uptime from Prometheus.
         access:
           level: 0
           readOnly: true
         source: prometheus
-        allowedEnvironments: [dev, prod]
+        allowedEnvironments:
+          - dev
+          - prod
         timeoutMs: 5000
         input:
           type: object
@@ -115,7 +394,9 @@ plugins:
           level: 0
           readOnly: true
         source: prometheus
-        allowedEnvironments: [dev, prod]
+        allowedEnvironments:
+          - dev
+          - prod
         timeoutMs: 5000
         input:
           type: object
@@ -135,7 +416,9 @@ plugins:
           level: 0
           readOnly: true
         source: prometheus
-        allowedEnvironments: [dev, prod]
+        allowedEnvironments:
+          - dev
+          - prod
         timeoutMs: 5000
         input:
           type: object
@@ -155,7 +438,9 @@ plugins:
           level: 0
           readOnly: true
         source: amdb_admin_api
-        allowedEnvironments: [dev, prod]
+        allowedEnvironments:
+          - dev
+          - prod
         timeoutMs: 5000
         input:
           type: object
@@ -170,7 +455,9 @@ plugins:
           level: 0
           readOnly: true
         source: amdb_admin_api
-        allowedEnvironments: [dev, prod]
+        allowedEnvironments:
+          - dev
+          - prod
         timeoutMs: 5000
         input:
           type: object
@@ -180,7 +467,8 @@ plugins:
               type: string
               minLength: 1
               maxLength: 128
-          required: [databaseId]
+          required:
+            - databaseId
         execution:
           type: source_adapter
           operation: db_get_database_detail
@@ -190,7 +478,9 @@ plugins:
           level: 0
           readOnly: true
         source: amdb_admin_api
-        allowedEnvironments: [dev, prod]
+        allowedEnvironments:
+          - dev
+          - prod
         timeoutMs: 5000
         input:
           type: object

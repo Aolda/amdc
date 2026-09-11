@@ -53,7 +53,7 @@ export interface JsonObjectSchema {
 
 export type JsonSchemaProperty =
   | {
-      readonly type: "number";
+      readonly type: "number" | "integer";
       readonly enum?: readonly number[];
       readonly minimum?: number;
       readonly maximum?: number;
@@ -64,6 +64,7 @@ export type JsonSchemaProperty =
       readonly enum?: readonly string[];
       readonly minLength?: number;
       readonly maxLength?: number;
+      readonly pattern?: string;
       readonly description?: string;
     }
   | {
@@ -120,9 +121,20 @@ export interface PrometheusHttpToolExecution {
 }
 
 export type ToolExecution =
+  | MysqlSqlExecution
   | SourceAdapterToolExecution
   | LocalShellToolExecution
   | PrometheusHttpToolExecution;
+
+export interface MysqlSqlExecution {
+  readonly type: "mysql_sql";
+  readonly sql: string;
+  readonly orderBy: string;
+  readonly filters: readonly { readonly input: string; readonly sql: string; readonly bindings: readonly string[]; readonly when?: boolean }[];
+  readonly defaults: Readonly<Record<string, string | number | boolean>>;
+  readonly requires: Readonly<Record<string, string>>;
+  readonly environmentPrefix: Readonly<Record<AmdcEnvironment, string>>;
+}
 
 export interface ToolExecutionRequest {
   readonly toolName: string;
@@ -181,7 +193,16 @@ export interface RawHttpToolResult extends RawToolResultBase {
   };
 }
 
-export type RawToolResult = RawLocalShellToolResult | RawHttpToolResult;
+export interface RawMysqlToolResult extends RawToolResultBase {
+  readonly transport: "mysql";
+  readonly appliedFilters: Readonly<Record<string, unknown>>;
+  readonly limit: number;
+  readonly rows: readonly Record<string, unknown>[];
+  readonly returnedRows: number;
+  readonly truncated: boolean;
+}
+
+export type RawToolResult = RawLocalShellToolResult | RawHttpToolResult | RawMysqlToolResult;
 
 export interface SanitizedToolError {
   readonly toolName: string;

@@ -2,6 +2,7 @@ import { PluginRegistry } from "./plugin-registry.js";
 import { executeConfiguredHttpHealth } from "./source-adapters/configured-http-health-adapter.js";
 import { executeLocalShellTool } from "./source-adapters/local-shell-adapter.js";
 import { executePrometheusHttpTool } from "./source-adapters/prometheus-http-adapter.js";
+import { executeMysqlTool } from "./source-adapters/mysql-adapter.js";
 import type {
   JsonObjectSchema,
   SanitizedToolError,
@@ -61,6 +62,10 @@ export class YamlToolRuntime implements ToolRuntime {
 
     if (tool.execution.type === "prometheus_http") {
       return executePrometheusHttpTool(tool, context, occurredAt);
+    }
+
+    if (tool.execution.type === "mysql_sql") {
+      return executeMysqlTool(tool, request.args as Record<string, unknown>, context);
     }
 
     if (tool.execution.operation === "system_check_configured_http_health") {
@@ -132,7 +137,7 @@ function isValidObjectInput(value: unknown, schema: JsonObjectSchema): boolean {
       continue;
     }
 
-    if (property.type === "number" && typeof rawValue !== "number") {
+    if ((property.type === "number" || property.type === "integer") && (typeof rawValue !== "number" || !Number.isFinite(rawValue))) {
       return false;
     }
 
@@ -148,10 +153,11 @@ function isValidObjectInput(value: unknown, schema: JsonObjectSchema): boolean {
       return false;
     }
 
-    if (property.type === "number") {
+    if (property.type === "number" || property.type === "integer") {
       if (typeof rawValue !== "number") {
         return false;
       }
+      if (property.type === "integer" && !Number.isInteger(rawValue)) return false;
 
       if (property.minimum !== undefined && rawValue < property.minimum) {
         return false;
@@ -174,6 +180,7 @@ function isValidObjectInput(value: unknown, schema: JsonObjectSchema): boolean {
       if (property.maxLength !== undefined && rawValue.length > property.maxLength) {
         return false;
       }
+      if (property.pattern !== undefined && !new RegExp(property.pattern).test(rawValue)) return false;
     }
   }
 

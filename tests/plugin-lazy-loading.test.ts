@@ -111,6 +111,11 @@ test("selecting mysql returns its lazy-loaded tool descriptors from the real cat
   assert.deepEqual(
     payload.loadedTools.map((loadedTool) => loadedTool.name),
     [
+      "mysql_list_schemas",
+      "mysql_get_processlist",
+      "mysql_get_transactions",
+      "mysql_get_all_lock_waits",
+      "mysql_get_lock_waits",
       "mysql_get_service_status",
       "mysql_get_connections",
       "mysql_get_query_activity",

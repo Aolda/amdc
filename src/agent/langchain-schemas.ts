@@ -49,8 +49,8 @@ export function jsonObjectSchemaToZod(schema: JsonObjectSchema): z.ZodObject<Rec
 }
 
 function jsonSchemaPropertyToZod(property: JsonSchemaProperty): z.ZodTypeAny {
-  if (property.type === "number") {
-    let schema = z.number();
+  if (property.type === "number" || property.type === "integer") {
+    let schema = property.type === "integer" ? z.number().int() : z.number();
 
     if (property.enum?.length) {
       return literalsToZodUnion(property.enum);
@@ -81,6 +81,7 @@ function jsonSchemaPropertyToZod(property: JsonSchemaProperty): z.ZodTypeAny {
     if (property.maxLength !== undefined) {
       schema = schema.max(property.maxLength);
     }
+    if (property.pattern !== undefined) schema = schema.regex(new RegExp(property.pattern));
 
     return property.description ? schema.describe(property.description) : schema;
   }

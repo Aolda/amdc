@@ -25,6 +25,7 @@ const allowedSources = new Set([
 const allowedEnvironments = new Set(["dev", "prod"]);
 const allowedExecutionTypes = new Set([
   "source_adapter",
+  "mysql_sql",
   "local_shell",
   "prometheus_http"
 ]);
@@ -94,6 +95,21 @@ function parseTool(pluginName: PluginName, value: unknown): ToolDefinition {
     allowedEnvironmentValues
   );
 
+  if (execution.type === "mysql_sql") {
+    const properties = inputSchema.properties ?? {};
+    for (const filter of execution.filters) {
+      if (!(filter.input in properties) || filter.bindings.some(key => !(key in properties))) throw new Error(`${name}: undeclared SQL input.`);
+      if (filter.when !== undefined && properties[filter.input].type !== "boolean") throw new Error(`${name}: option type mismatch.`);
+    }
+    for (const [key, dependency] of Object.entries(execution.requires)) {
+      if (!(key in properties) || !(dependency in properties)) throw new Error(`${name}: undeclared dependency.`);
+    }
+    for (const key of Object.keys(execution.defaults)) if (key !== "limit" && !(key in properties)) throw new Error(`${name}: undeclared default.`);
+    const limit = execution.defaults.limit;
+    if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 200) throw new Error(`${name}: invalid default limit.`);
+    if (execution.sql.includes("?") || execution.orderBy.includes("?")) throw new Error(`${name}: bindings belong in filters.`);
+  }
+
   return {
     name,
     pluginName,
@@ -114,6 +130,28 @@ function parseExecution(
 ): ToolDefinition["execution"] {
   const raw = asRecord(value, path);
   const type = parseEnum(raw.type, allowedExecutionTypes, `${path}.type`);
+
+  if (type === "mysql_sql") {
+    const sql = parseNonEmptyString(raw.sql, `${path}.sql`);
+    const orderBy = parseNonEmptyString(raw.orderBy, `${path}.orderBy`);
+    const safeFragment = (s: string) => { if (/[;#]|--|\/\*|\{\{|\}\}/.test(s)) throw new Error(`${path}: SQL must be fixed single-statement text.`); return s; };
+    if (!/^SELECT\s/i.test(sql) || /\b(INTO|OUTFILE|DUMPFILE|FOR UPDATE)\b/i.test(sql)) throw new Error(`${path}: read-only SELECT required.`);
+    safeFragment(sql); safeFragment(orderBy);
+    const filters = asArray(raw.filters, `${path}.filters`).map(value => {
+      const f = asRecord(value, path);
+      const input = parseNonEmptyString(f.input, path);
+      const statement = safeFragment(parseNonEmptyString(f.sql, path));
+      const bindings = asArray(f.bindings, path).map(v => parseNonEmptyString(v, path));
+      if ((statement.match(/\?/g) ?? []).length !== bindings.length) throw new Error(`${path}: placeholder count mismatch.`);
+      if (f.when !== undefined && typeof f.when !== "boolean") throw new Error(`${path}: boolean option required.`);
+      return { input, sql: statement, bindings, ...(f.when === undefined ? {} : { when: f.when as boolean }) };
+    });
+    const defaults = asRecord(raw.defaults, path);
+    if (Object.values(defaults).some(v => !["string", "number", "boolean"].includes(typeof v))) throw new Error(`${path}: invalid default.`);
+    const requires = asRecord(raw.requires, path);
+    if (Object.values(requires).some(v => typeof v !== "string")) throw new Error(`${path}: invalid dependency.`);
+    return { type, sql, orderBy, filters, defaults: defaults as Record<string, string | number | boolean>, requires: requires as Record<string, string>, environmentPrefix: parseEnvironmentSourceMap(raw.environmentPrefix, path, toolEnvironments) };
+  }
 
   if (type === "source_adapter") {
     return {
