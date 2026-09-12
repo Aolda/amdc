@@ -111,17 +111,18 @@ test("selecting mysql returns its lazy-loaded tool descriptors from the real cat
   assert.deepEqual(
     payload.loadedTools.map((loadedTool) => loadedTool.name),
     [
-      "mysql_list_schemas",
-      "mysql_get_processlist",
-      "mysql_get_transactions",
+      "mysql_list_databases",
+      "mysql_get_all_processlist",
+      "mysql_get_active_processlist",
+      "mysql_get_processlist_by_database",
+      "mysql_get_processlist_by_connection_id",
+      "mysql_get_all_transactions",
+      "mysql_get_transactions_by_connection_id",
+      "mysql_get_transaction_by_transaction_id",
       "mysql_get_all_lock_waits",
-      "mysql_get_lock_waits",
-      "mysql_get_service_status",
-      "mysql_get_connections",
-      "mysql_get_query_activity",
-      "db_list_databases",
-      "db_get_database_detail",
-      "db_list_users"
+      "mysql_get_lock_waits_by_database",
+      "mysql_get_lock_waits_by_table",
+      "mysql_get_lock_waits_by_connection_id"
     ]
   );
   assert.equal(payload.loadedTools.every((loadedTool) => loadedTool.readOnly), true);
@@ -135,24 +136,17 @@ test("real catalog advertises only plugins with a connected implementation", () 
 
   assert.deepEqual(
     realRegistry.listPlugins().map((plugin) => plugin.name),
-    ["system", "prometheus", "mysql", "backend"]
+    ["system", "prometheus", "mysql"]
   );
 });
 
-test("mysql query activity uses a fixed Prometheus query", () => {
-  const catalogPath = fileURLToPath(
+test("mysql selection exposes neutral tool contracts without plugin-specific prompting", () => {
+  const realRegistry = new PluginRegistry(loadToolCatalogFromYaml(fileURLToPath(
     new URL("../src/tools/catalogs/amdb-tools.yaml", import.meta.url)
-  );
-  const realRegistry = new PluginRegistry(loadToolCatalogFromYaml(catalogPath));
-  const tool = realRegistry.getTool("mysql_get_query_activity");
-
-  assert.equal(tool?.execution.type, "prometheus_http");
-  if (!tool || tool.execution.type !== "prometheus_http") {
-    assert.fail("Expected mysql_get_query_activity to use fixed Prometheus HTTP execution.");
-  }
-  assert.equal(tool.execution.path, "/api/v1/query");
-  assert.match(tool.execution.query.query, /mysql_global_status_slow_queries/);
-  assert.match(tool.execution.query.query, /amdb_user_max_query_time_us/);
+  )));
+  const mysql = createPluginSelectionPayload(realRegistry, "mysql");
+  assert.deepEqual(Object.keys(mysql).sort(), ["loadedTools", "selectedPlugin"]);
+  assert.ok(mysql.loadedTools.every(tool => !/when|use this|incident|diagnos/i.test(tool.description)));
 });
 
 test("selecting prometheus exposes only the live target Tool", () => {
@@ -218,12 +212,15 @@ test("catalog rejects Agent-substitutable Prometheus paths and queries", () => {
   );
 });
 
-test("selecting backend returns the raw health Tool descriptor", () => {
+test("system owns the single raw backend health tool", () => {
   const catalogPath = fileURLToPath(
     new URL("../src/tools/catalogs/amdb-tools.yaml", import.meta.url)
   );
   const realRegistry = new PluginRegistry(loadToolCatalogFromYaml(catalogPath));
-  const payload = createPluginSelectionPayload(realRegistry, "backend");
+  const payload = createPluginSelectionPayload(realRegistry, "system");
+  assert.ok(!realRegistry.listPlugins().some(p => p.name === "backend"));
+  assert.equal(realRegistry.getTool("system_check_backend_health"), null);
+  assert.equal(realRegistry.getTool("system_check_configured_http_health"), null);
 
   assert.deepEqual(
     payload.loadedTools.map((loadedTool) => loadedTool.name),
@@ -231,6 +228,7 @@ test("selecting backend returns the raw health Tool descriptor", () => {
   );
 
   const backendTool = realRegistry.getTool("backend_get_health");
+  assert.equal(backendTool?.pluginName, "system");
   assert.equal(backendTool?.execution.type, "local_shell");
   if (!backendTool || backendTool.execution.type !== "local_shell") {
     assert.fail("Expected backend_get_health to use local shell execution.");

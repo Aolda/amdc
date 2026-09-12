@@ -28,21 +28,21 @@ try {
  await b.query('SET SESSION innodb_lock_wait_timeout=15');
  const [[ai]]=await a.query('SELECT CONNECTION_ID() id');const [[bi]]=await b.query('SELECT CONNECTION_ID() id');
  const aid=String(ai.id),bid=String(bi.id);
- assert.ok((await read('mysql_list_schemas',{namePrefix:fixture.database})).rows.some(r=>r.schemaName===fixture.database));
+ assert.ok((await read('mysql_list_databases',{})).rows.some(r=>r.databaseName===fixture.database));
  await a.beginTransaction();await a.query('UPDATE items SET value=1 WHERE id=1');
  const pending=b.query('UPDATE items SET value=2 WHERE id=1').then(()=>true,()=>false);
  let locks;
- for(let i=0;i<20;i++){locks=await read('mysql_get_lock_waits',{schema:fixture.database,table:'items'});if(locks.rows.length)break;await new Promise(r=>setTimeout(r,100));}
+ for(let i=0;i<20;i++){locks=await read('mysql_get_lock_waits_by_table',{databaseName:fixture.database,tableName:'items'});if(locks.rows.length)break;await new Promise(r=>setTimeout(r,100));}
  assert.ok(locks.rows.some(r=>r.blockingConnectionId===aid&&r.waitingConnectionId===bid));
- assert.ok((await read('mysql_get_all_lock_waits',{})).rows.some(r=>r.objectSchema===fixture.database));
- const p=await read('mysql_get_processlist',{connectionId:aid,includeIdle:true});assert.equal(p.rows[0].mysqlUser,fixture.user);
- assert.equal((await read('mysql_get_processlist',{connectionId:aid})).rows.length,0);
- assert.equal((await read('mysql_get_transactions',{connectionId:aid})).rows[0].mysqlUser,fixture.user);
- const limited=await read('mysql_get_processlist',{schema:fixture.database,includeIdle:true,limit:1});assert.equal(limited.returnedRows,1);assert.equal(limited.truncated,true);
- for(const args of [{connectionId:'?'},{limit:1.5},{connectionId:'1'.repeat(21)},{mysqlUser:'root'}]){const r=await rt.execute({toolName:'mysql_get_processlist',args},ctx);assert.equal(r.ok,false);assert.equal(r.error.code,'invalid_input');}
- assert.equal((await read('mysql_get_lock_waits',{schema:fixture.database,table:'missing'})).returnedRows,0);
+ assert.ok((await read('mysql_get_all_lock_waits',{})).rows.some(r=>r.objectDatabase===fixture.database));
+ const p=await read('mysql_get_processlist_by_connection_id',{connectionId:aid});assert.equal(p.rows[0].mysqlUser,fixture.user);
+ const rejectedAll=await rt.execute({toolName:'mysql_get_all_processlist',args:{connectionId:aid}},ctx);assert.equal(rejectedAll.ok,false);assert.equal(rejectedAll.error.code,'invalid_input');
+ assert.equal((await read('mysql_get_transactions_by_connection_id',{connectionId:aid})).rows[0].mysqlUser,fixture.user);
+ const limited=await read('mysql_get_processlist_by_database',{databaseName:fixture.database,includeIdle:true,limit:1});assert.equal(limited.returnedRows,1);assert.equal(limited.truncated,true);
+ for(const args of [{connectionId:'?'},{connectionId:'1'.repeat(21)},{mysqlUser:'root'}]){const r=await rt.execute({toolName:'mysql_get_processlist_by_connection_id',args},ctx);assert.equal(r.ok,false);assert.equal(r.error.code,'invalid_input');}
+ assert.equal((await read('mysql_get_lock_waits_by_table',{databaseName:fixture.database,tableName:'missing'})).returnedRows,0);
  await a.rollback();assert.equal(await pending,true);
- assert.equal((await read('mysql_get_lock_waits',{schema:fixture.database})).returnedRows,0);
+ assert.equal((await read('mysql_get_lock_waits_by_database',{databaseName:fixture.database})).returnedRows,0);
  console.log('PASS: schema, locks, connection/account output, idle filtering, truncation, invalid inputs, recovery');
 }finally{clearTimeout(watchdog);for(const c of connections)c.destroy();}
 `;

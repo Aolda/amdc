@@ -1,7 +1,7 @@
 # Direct MySQL diagnostic tools
 
-The mysql plugin includes parameterized read-only MySQL operations and a no-input lock overview.
-YAML owns each tool's input schema, fixed SELECT, optional filter predicates,
+The mysql plugin includes only direct, parameterized read-only MySQL operations.
+YAML owns each tool's input schema, fixed SELECT, filter predicates,
 binding order, defaults, dependencies, ordering and environment-variable prefixes.
 The `mysql_sql` executor in `src/tools/source-adapters/mysql-adapter.ts` contains
 no tool-name dispatch or tool-specific SQL. It binds values through mysql2 prepared
@@ -12,21 +12,25 @@ use a least-privilege diagnostic account. SELECT syntax checks are not a SQL san
 
 | Tool | Filters | Scope |
 |---|---|---|
-| mysql_get_all_lock_waits | None | Unfiltered InnoDB data-lock wait edges, capped at 100 with truncation flag |
-| mysql_list_schemas | namePrefix, limit | Non-system schemas visible to the diagnostic account; literal prefix, not LIKE wildcards |
-| mysql_get_processlist | schema, connectionId, includeIdle, limit | Foreground connections except this query; schema means connection default schema; idle excluded by default |
-| mysql_get_transactions | connectionId, transactionId, limit | Active InnoDB transactions, oldest first; default schema is informational, not transaction ownership |
-| mysql_get_lock_waits | schema, table, connectionId, limit | InnoDB data-lock wait edges; schema/table refer to locked objects; connection may be on either side |
+| mysql_list_databases | limit | All non-system databases visible to the diagnostic account |
+| mysql_get_all_processlist | limit | All foreground connections except this query, including sleeping connections |
+| mysql_get_active_processlist | limit | Non-sleeping foreground connections except this query |
+| mysql_get_processlist_by_database | databaseName (required), includeIdle, limit | Foreground connections whose default database exactly matches the supplied database name |
+| mysql_get_processlist_by_connection_id | connectionId (required) | One foreground connection identified by an observed MySQL backend connection ID |
+| mysql_get_all_transactions | limit | All active InnoDB transactions, oldest first |
+| mysql_get_transactions_by_connection_id | connectionId (required), limit | Active transactions owned by one observed MySQL backend connection |
+| mysql_get_transaction_by_transaction_id | transactionId (required) | One active transaction identified by an observed InnoDB transaction ID |
+| mysql_get_all_lock_waits | None | All InnoDB data-lock wait edges, capped at 100 with truncation flag |
+| mysql_get_lock_waits_by_database | databaseName (required), limit | Lock-wait edges for objects in one database |
+| mysql_get_lock_waits_by_table | databaseName and tableName (required), limit | Lock-wait edges for one exact table |
+| mysql_get_lock_waits_by_connection_id | connectionId (required), limit | Lock-wait edges where one connection is waiter or blocker |
 
-All filters are optional and combined with AND. `table` requires `schema`.
 `mysqlUser` remains in returned rows but is not accepted as an input filter.
 IDs are decimal strings, including returned connection and transaction IDs.
 Input ID schemas enforce 1–20 decimal digits; limits use JSON Schema integer.
-The table-to-schema dependency is documented in the field description and enforced
-by the MySQL adapter; it is not expressed as a conditional JSON Schema constraint.
 Each query fetches limit+1 rows; default limit 100, maximum 200. Results include
 rows, returnedRows, truncated, collectedAt, appliedFilters and the effective limit.
-appliedFilters records supplied filters plus the processlist includeIdle default;
+appliedFilters records supplied filters plus any tool-defined filter defaults;
 fixed scope restrictions from the table above still apply.
 SQL text is capped at 4096
 characters with statementTruncated. SQL text can contain application data;
@@ -34,8 +38,8 @@ existing-style secret scanning rejects known configured secrets and key/bearer
 patterns, but is not general PII redaction. Do not persist raw results in traces.
 LOCK_DATA is deliberately not selected.
 
-For example, `mysql_get_processlist({})` reads without optional identity filters;
-`mysql_get_processlist({"schema":"sg"})` filters the connection default schema.
+For example, `mysql_get_all_processlist({})` reads all foreground connections;
+`mysql_get_processlist_by_database({"databaseName":"sg"})` filters the connection default database.
 Empty rows mean no matches within the applied scope at collection time, not proof
 that the server is healthy.
 
@@ -71,16 +75,15 @@ fixture and the AMDC diagnostic account for tool reads. It creates a temporary
 schema/account, checks filters, lock relationships, idle visibility, truncation,
 invalid inputs and recovery, then removes its fixture. It never calls an LLM.
 
-Automated tests exercise fixed query bindings, prefix semantics, bidirectional
-lock filters, invalid inputs, limits, raw output, secret/size rejection, permission
+Automated tests exercise fixed query bindings, exact database/table/ID scopes,
+invalid inputs, limits, raw output, secret/size rejection, permission
 errors, deadline cleanup including late connections, and 12 concurrent fake calls.
 They do not establish live SQL compatibility or live server overhead.
 
-Before deployment, execute all five through the actual runtime using a diagnostic
+Before deployment, execute all eleven through the actual runtime using a diagnostic
 account, then use an isolated test table and two test sessions to verify transaction
 and lock IDs link correctly. Do not inject locks into existing application tables.
 Verify privileges, actual MySQL 8.0 patch version, elapsed query time and server
-impact. The existing DB metadata stubs and Prometheus tools remain unchanged.
-No bot restart, account provisioning, fault injection or Git push is part of this
-implementation. Rollback consists of removing the five catalog entries; existing
-tools continue to use their original adapters.
+impact. Prometheus metrics and AMDB metadata are outside the mysql plugin and must
+be provided by their own plugins. No account provisioning or Git push is part of
+this implementation.
