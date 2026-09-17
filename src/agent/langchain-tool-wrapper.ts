@@ -1,4 +1,5 @@
 import { tool } from "@langchain/core/tools";
+import { localToolDetails } from "../observability/local-tool-details.js";
 import type { AmdcEnvironment } from "../config/env.js";
 import type { DiagnosticTraceSink } from "../observability/diagnostic-trace.js";
 import { jsonObjectSchemaToZod } from "./langchain-schemas.js";
@@ -16,6 +17,8 @@ export function createAmdcLangChainTools(
   runtime: ToolRuntime,
   context: LangChainToolWrapperContext
 ) {
+  // One set per diagnosis; reserve synchronously before parallel tool execution.
+  const executed = new Set<string>();
   return descriptors.map((descriptor) =>
     tool(
       async (args: Record<string, unknown>) => {
@@ -25,10 +28,23 @@ export function createAmdcLangChainTools(
           runId: context.runId,
           occurredAt: new Date().toISOString(),
           plugin: descriptor.pluginName,
-          tool: descriptor.name
+          tool: descriptor.name,
+          ...(["mysql", "prometheus"].includes(descriptor.pluginName) ? localToolDetails(context.environment, args) : {})
         });
 
-        const result = await runtime.execute(
+        const key = JSON.stringify([descriptor.name, Object.entries(args).sort(([a], [b]) => a.localeCompare(b))]);
+        const duplicate = executed.has(key);
+        executed.add(key);
+        const result = duplicate ? {
+          ok: false as const,
+          error: {
+            toolName: descriptor.name,
+            pluginName: descriptor.pluginName,
+            code: "invalid_input" as const,
+            message: "Identical tool input was already requested in this diagnosis. Use its earlier result; choose a different query or finish with the available evidence.",
+            occurredAt: new Date().toISOString()
+          }
+        } : await runtime.execute(
           {
             toolName: descriptor.name,
             args
@@ -47,6 +63,7 @@ export function createAmdcLangChainTools(
           tool: descriptor.name,
           durationMs: Date.now() - startedAt,
           outcome: result.ok ? "succeeded" : "failed",
+          ...(["mysql", "prometheus"].includes(descriptor.pluginName) ? localToolDetails(context.environment, args, result) : {}),
           ...(result.ok &&
           "rawResult" in result &&
           result.rawResult.transport === "local_shell"

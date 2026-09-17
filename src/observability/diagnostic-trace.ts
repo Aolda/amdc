@@ -7,6 +7,18 @@ interface DiagnosticTraceBase {
   readonly occurredAt: string;
 }
 
+interface LocalToolTraceDetails {
+  readonly args: Readonly<Record<string, unknown>>;
+  readonly appliedFilters?: Readonly<Record<string, unknown>>;
+  readonly returnedRows?: number;
+  readonly truncated?: boolean;
+  readonly limit?: number;
+  readonly resultType?: string;
+  readonly seriesCount?: number;
+  readonly pointCount?: number;
+  readonly itemCount?: number;
+}
+
 export type DiagnosticTraceEvent =
   | (DiagnosticTraceBase & {
       readonly event: "diagnosis.started";
@@ -39,11 +51,13 @@ export type DiagnosticTraceEvent =
     })
   | (DiagnosticTraceBase & {
       readonly event: "tool.started";
+      readonly localDetails?: LocalToolTraceDetails;
       readonly plugin: PluginName;
       readonly tool: string;
     })
   | (DiagnosticTraceBase & {
       readonly event: "tool.finished";
+      readonly localDetails?: LocalToolTraceDetails;
       readonly plugin: PluginName;
       readonly tool: string;
       readonly durationMs: number;

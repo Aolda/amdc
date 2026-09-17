@@ -136,7 +136,7 @@ test("real catalog advertises only plugins with a connected implementation", () 
 
   assert.deepEqual(
     realRegistry.listPlugins().map((plugin) => plugin.name),
-    ["system", "prometheus", "mysql"]
+    ["system", "prometheus", "mysql", "proxysql"]
   );
 });
 
@@ -149,7 +149,7 @@ test("mysql selection exposes neutral tool contracts without plugin-specific pro
   assert.ok(mysql.loadedTools.every(tool => !/when|use this|incident|diagnos/i.test(tool.description)));
 });
 
-test("selecting prometheus exposes only the live target Tool", () => {
+test("selecting prometheus exposes its registered read-only readers", () => {
   const catalogPath = fileURLToPath(
     new URL("../src/tools/catalogs/amdb-tools.yaml", import.meta.url)
   );
@@ -158,7 +158,7 @@ test("selecting prometheus exposes only the live target Tool", () => {
 
   assert.deepEqual(
     payload.loadedTools.map((loadedTool) => loadedTool.name),
-    ["prometheus_get_targets"]
+    ["prometheus_get_targets", "prometheus_list_metric_names", "prometheus_get_metric_metadata", "prometheus_get_metric_series", "prometheus_get_metric_value", "prometheus_get_metric_range", "prometheus_get_metric_series_by_instance", "prometheus_get_metric_series_by_database", "prometheus_get_metric_value_by_instance", "prometheus_get_metric_value_by_database", "prometheus_get_metric_range_by_instance", "prometheus_get_metric_range_by_database"]
   );
 
   const tool = realRegistry.getTool("prometheus_get_targets");

@@ -9,6 +9,7 @@ export const PLUGIN_NAMES = [
   "mysql",
   "prometheus",
   "proxy",
+  "proxysql",
   "system"
 ] as const;
 
@@ -118,6 +119,8 @@ export interface PrometheusHttpToolExecution {
   readonly baseUrlEnvironment: Readonly<Record<AmdcEnvironment, string>>;
   readonly path: string;
   readonly query: Readonly<Record<string, string>>;
+  readonly selection?: "metadata" | "series" | "instant" | "range";
+  readonly labelInputs?: Readonly<Record<string, string>>;
 }
 
 export type ToolExecution =
@@ -127,7 +130,7 @@ export type ToolExecution =
   | PrometheusHttpToolExecution;
 
 export interface MysqlSqlExecution {
-  readonly type: "mysql_sql";
+  readonly type: "mysql_sql" | "proxysql_sql";
   readonly sql: string;
   readonly orderBy: string;
   readonly filters: readonly { readonly input: string; readonly sql: string; readonly bindings: readonly string[]; readonly when?: boolean }[];
