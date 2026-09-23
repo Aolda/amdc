@@ -8,6 +8,10 @@ Delivery Status: not_started
 Architecture decision date: 2026-07-07  
 Last reviewed: 2026-07-22
 
+2026-09-19 manual handoff update: PRD 06의 Diagnostic Agent Output에 수동 진단의
+실행 기록 + 선택적 comment 인계 계약을 정의했다. PRD 03의 최종 7-field Report와
+동일한 객체가 아니며, 자동 Trigger/Report Agent/영속 저장 완료를 뜻하지 않는다.
+
 이 폴더의 문서만 현재 P0 개발 계약으로 사용한다. Notion, archive, 과거
 배포본, 기존 MCP config/fixture/script는 의사결정 이력이나 실험 근거일 뿐
 구현 기준이 아니다. 과거 자료의 아이디어는 numbered PRD에 반영된 뒤에만

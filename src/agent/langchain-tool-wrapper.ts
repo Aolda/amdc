@@ -4,12 +4,14 @@ import type { AmdcEnvironment } from "../config/env.js";
 import type { DiagnosticTraceSink } from "../observability/diagnostic-trace.js";
 import { jsonObjectSchemaToZod } from "./langchain-schemas.js";
 import type { AgentVisibleToolDescriptor, ToolRuntime } from "../tools/types.js";
+import { DiagnosisLedger } from "../report/diagnosis-handoff.js";
 
 export interface LangChainToolWrapperContext {
   readonly environment: AmdcEnvironment;
   readonly referenceTime: Date;
   readonly runId: string;
   readonly traceSink: DiagnosticTraceSink;
+  readonly ledger?: DiagnosisLedger;
 }
 
 export function createAmdcLangChainTools(
@@ -19,9 +21,11 @@ export function createAmdcLangChainTools(
 ) {
   // One set per diagnosis; reserve synchronously before parallel tool execution.
   const executed = new Set<string>();
+  const ledger = context.ledger ?? new DiagnosisLedger(context.runId);
   return descriptors.map((descriptor) =>
     tool(
       async (args: Record<string, unknown>) => {
+        const call = ledger.begin(descriptor, args);
         const startedAt = Date.now();
         await context.traceSink.record({
           event: "tool.started",
@@ -53,7 +57,18 @@ export function createAmdcLangChainTools(
             environment: context.environment,
             referenceTime: context.referenceTime
           }
-        );
+        ).catch(() => ({
+          ok: false as const,
+          error: {
+            toolName: descriptor.name,
+            pluginName: descriptor.pluginName,
+            code: "source_request_failed" as const,
+            message: "Tool execution failed unexpectedly.",
+            occurredAt: new Date().toISOString()
+          }
+        }));
+
+        ledger.finish(call, result);
 
         await context.traceSink.record({
           event: "tool.finished",
@@ -72,7 +87,7 @@ export function createAmdcLangChainTools(
           ...(!result.ok ? { errorCode: result.error.code } : {})
         });
 
-        return JSON.stringify(result);
+        return JSON.stringify({ tool_call_id: call.tool_call_id, seq: call.seq, ...result });
       },
       {
         name: descriptor.name,

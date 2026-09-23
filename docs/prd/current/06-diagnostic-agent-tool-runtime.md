@@ -1,8 +1,13 @@
 # PRD 06. Diagnostic Agent And YAML Tool Runtime
 
 Status: draft amendment  
-Last reviewed: 2026-08-28
+Last reviewed: 2026-09-19
 Owns: Diagnostic Agent 판단 범위, plugin/tool 선택 구조, YAML 기반 Tool Runtime 실행 경계
+
+2026-09-19 manual diagnostic handoff amendment: 이 문서의 Diagnostic Agent Output이
+현재 수동 진단의 Report 인계 계약을 소유한다. 아래 과거 vertical-slice 설명과 다른
+경우 이 계약이 우선한다. 최종 Report 형식(PRD 03), 자동 Trigger, 지식 DB 연동은
+이번 변경 범위가 아니다.
 
 ## Gate Review
 
@@ -338,11 +343,11 @@ interface ToolObservation {
 }
 ~~~
 
-Raw source response is not passed to Report Agent and is not stored as evidence.
-Prometheus vertical slice의 raw response는 secret scan, JSON 형식 검증, 64 KiB 제한을
-통과한 경우에만 현재 Diagnostic Agent의 Tool message로 전달한다. raw response는
-DiagnosisResult, Report, trace log 또는 persistence에 복사하지 않는다. HTTP 오류
-body도 Agent에 반환하지 않는다. 후속 Evidence 저장 계약은 별도 gate에서 정한다.
+2026-09-19 manual handoff에서는 기존 adapter의 검증·보안 검사·출력 제한을 통과한
+Tool 결과를 DiagnosisResult의 `observations[].result`에 그대로 보존한다. LLM이
+결과를 재작성하지 않는다. HTTP 오류 body나 credential은 포함하지 않으며, 기본
+trace log와 DB에 결과 전문을 추가 저장하지 않는다. Discord의 임시 검증 출력은
+미리보기와 전체 handoff JSON 첨부를 사용한다. 영속 Evidence 저장은 별도 계약이다.
 
 Prometheus HTTP YAML execution은 다음 값을 server-owned contract로 고정한다.
 
@@ -363,40 +368,76 @@ actual abort, same-origin URL 결합, prod HTTPS, response byte limit을 강제�
 
 ## Diagnostic Agent Output
 
-Diagnostic Agent returns DiagnosisResult.
+### System container observation boundary (2026-09-19)
+
+The `system` plugin separates container enumeration (`system_list_containers`,
+empty input) from detail (`system_get_container_status`, exact `containerName`).
+Existing backend HTTP health remains a separate tool. Container execution and
+recorded Docker healthcheck state do not replace MySQL/ProxySQL/Prometheus queries
+and do not establish application health.
+
+YAML `docker_http` execution permits only fixed container-list and inspect GET
+paths over a server-configured Unix socket, scoped to an exact Compose project.
+The runtime verifies project scope, resolves names to immutable IDs, applies one
+deadline and byte bounds, and excludes configuration/credential fields from the
+returned state projection. The result uses the existing `RawHttpToolResult`
+envelope; Report receives it unchanged with optional separate comments.
+Socket access is an independent deployment security decision, not authorized by
+the tool's read-only flag. See [container reader details](../../system-container-tools.md).
+
+### DiagnosisHandoff
+
+Diagnostic Agent returns a runtime-assembled DiagnosisHandoff.
 
 ~~~ts
-interface DiagnosisResult {
-  readonly symptom: string;
-  readonly environment: "dev" | "prod";
-  readonly inferredDomains: readonly {
-    readonly domain: string;
-    readonly reason: string;
+interface DiagnosisHandoff {
+  readonly diagnosis_id: string;
+  readonly request: string;
+  readonly completion_reason: "investigation_complete" | "insufficient_evidence" | "mock";
+  readonly observations: readonly {
+    readonly seq: number;
+    readonly tool_call_id: string;
+    readonly plugin: string;
+    readonly tool: string;
+    readonly input: Readonly<Record<string, unknown>>;
+    readonly observed_at: string;
+    readonly status: "success" | "error";
+    readonly result: RawToolResult | ToolObservation | null;
+    readonly error: SanitizedToolError | null;
+    readonly comment: {
+      readonly observation: string | null;
+      readonly hypothesis: string | null;
+      readonly limitation: string | null;
+    } | null;
+    readonly related_call_ids: readonly string[];
   }[];
-  readonly observations: readonly ToolObservation[];
-  readonly preliminaryFindings: readonly {
-    readonly finding: string;
-    readonly basis: readonly string[];
-    readonly level: "normal" | "warning" | "critical" | "unknown";
-  }[];
-  readonly suspectedCauses: readonly {
-    readonly cause: string;
-    readonly reason: string;
-    readonly confidence: "low" | "medium" | "high";
-  }[];
-  readonly recommendedChecks: readonly string[];
-  readonly incompleteReasons: readonly string[];
 }
 ~~~
 
-Example diagnosis wording:
+Rules:
 
-~~~text
-Backend 로그에서 최근 10분간 database connection timeout 패턴이 반복적으로 확인됨.
-Prometheus 기준 Backend 5xx 비율이 직전 baseline보다 높음.
-ProxySQL backend server 상태는 정상으로 확인됨.
-현재로서는 Backend와 MySQL 연결 구간 문제가 우선 의심됨.
-~~~
+- AMDC가 진단별 ID, 실행 순번·ID, tool/plugin, 입력, 결과·오류를 기록한다.
+  호출 ID는 provider의 ID가 아니라 `diagnosis_id:call-N`인 AMDC 소유 ID다.
+- 순번은 wrapper 진입 순서이며 병렬 완료 순서나 인과관계를 의미하지 않는다.
+- 모델은 `completion_reason`과 실제 ID에 연결하는 `comments`만 생성한다.
+  comment와 각 세부 필드는 null을 허용한다. comment가 없는 실행도 누락하지 않는다.
+- 가설은 확정 사실이 아니다. Report Agent는 원본 결과를 우선하고 comment는 참고한다.
+- 관련 호출은 순서와 무관하게 같은 진단에 존재하는 다른 ID를 허용한다. 병렬·후속
+  조회 근거도 연결할 수 있으며 인과관계를 의미하지 않는다. 미존재/중복/self 참조는
+  조립 오류로 거부한다. 모델의 결과·입력·시각 덮어쓰기는 schema에서 거부한다.
+- 성공은 `result`와 `error: null`, 실패는 `result: null`과 sanitized `error`다.
+  성공한 빈 결과도 보존하며, 실행 성공은 서비스 정상 판정이 아니다.
+- `observed_at`은 adapter의 collectedAt 또는 오류 occurredAt이다. 시계열의 실제
+  관측 구간은 result 내부 데이터를 확인해야 한다. referenceTime과 조회 시각은 다르다.
+- `completion_reason`은 모델의 조사 종료 설명이며 root cause/health 판정이 아니다.
+  도구 실행이 0건이면 `insufficient_evidence`로 강제한다. `mock`은 mock runner만 쓴다.
+- model/provider 실패와 잘못된 최종 참조는 기존 오류 경로로 종료한다. 부분 handoff의
+  영속 저장·재개는 이번 범위가 아니다.
+- plugin 선택·모델 호출은 trace에만 남긴다. wrapper에 진입한 조회 및 중복 거부는
+  기록한다. wrapper 진입 전 LangChain schema 검증/미선택 plugin 거부는 이 ledger의
+  실행 기록에 포함되지 않는다. 모든 시도 감사 기록과는 구분한다.
+- 입력·결과·최종 handoff에 configured secret/private-key/Bearer 검사를 적용한다.
+  이 검사는 자유형 comment의 사실성 검증 또는 완전한 DLP를 의미하지 않는다.
 
 ## Report Agent Boundary
 
@@ -494,8 +535,8 @@ Expected behavior:
   without fabricating observations.
 - Tool Runtime rejects unknown Tool names and invalid args.
 - Tool Runtime returns sanitized ToolObservation or SanitizedToolError.
-- DiagnosisResult contains inferred domain, observation, preliminary finding,
-  suspected cause, and recommended check.
+- DiagnosisHandoff preserves runtime execution records and separate optional comments,
+  rejecting fabricated references without a final health verdict or recommended actions.
 - Existing Discord adapter can call `runDiagnosis()` without knowing Tool
   Runtime internals.
 - Typecheck and build pass.

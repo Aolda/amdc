@@ -1,38 +1,9 @@
 import { z } from "zod/v3";
 import type { JsonObjectSchema, JsonSchemaProperty } from "../tools/types.js";
 
-export const diagnosisDraftSchema = z.object({
-  inferredDomains: z
-    .array(
-      z.object({
-        domain: z.string().min(1),
-        reason: z.string().min(1)
-      })
-    )
-    .default([]),
-  preliminaryFindings: z
-    .array(
-      z.object({
-        finding: z.string().min(1),
-        basis: z.array(z.string().min(1)).default([]),
-        level: z.enum(["normal", "warning", "critical", "unknown"])
-      })
-    )
-    .default([]),
-  suspectedCauses: z
-    .array(
-      z.object({
-        cause: z.string().min(1),
-        reason: z.string().min(1),
-        confidence: z.enum(["low", "medium", "high"])
-      })
-    )
-    .default([]),
-  recommendedChecks: z.array(z.string().min(1)).default([]),
-  incompleteReasons: z.array(z.string().min(1)).default([])
-});
+export { handoffDraftSchema as diagnosisDraftSchema } from "../report/diagnosis-handoff.js";
 
-export type DiagnosisDraft = z.infer<typeof diagnosisDraftSchema>;
+export type { HandoffDraft as DiagnosisDraft } from "../report/diagnosis-handoff.js";
 
 export function jsonObjectSchemaToZod(schema: JsonObjectSchema): z.ZodObject<Record<string, z.ZodTypeAny>> {
   const properties = schema.properties ?? {};

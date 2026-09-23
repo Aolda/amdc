@@ -89,3 +89,25 @@ test("writes safe model failure stage and metadata without provider message", as
   ]);
   assert.doesNotMatch(lines[0], /prompt|response|body|credential|message/);
 });
+import { diagnosisDraftSchema } from "../src/agent/langchain-schemas.js";
+import { TemporaryDiagnosticPresenter } from "../src/report/temporary-diagnostic-presenter.js";
+import { formatDiagnosticPresentationMessages } from "../src/adapters/discord/format-report.js";
+import { DiagnosisLedger } from "../src/report/diagnosis-handoff.js";
+
+test("handoff annotations reject old narrative contract and Discord preserves full JSON separately", () => {
+  const ledger = new DiagnosisLedger("diag-test");
+  const call = ledger.begin({ name: "mysql_get_all_processlist", pluginName: "mysql", description: "Read sessions", readOnly: true, inputSchema: { type: "object" } }, {});
+  const body = "긴 관측값 ".repeat(700);
+  ledger.finish(call, { ok: true, rawResult: { toolName: call.tool, pluginName: "mysql", source: "mysql", collectedAt: "2026-09-19T00:00:00.000Z", transport: "mysql", rows: [{ body }], appliedFilters: {}, limit: 1, returnedRows: 1, truncated: false } });
+  const draft = { completion_reason: "investigation_complete", comments: [{ tool_call_id: call.tool_call_id, comment: { observation: "현재 연결 조회", hypothesis: null, limitation: "이전 시점은 조회하지 않음" }, related_call_ids: [] }] };
+  assert.ok(diagnosisDraftSchema.safeParse(draft).success);
+  assert.equal(diagnosisDraftSchema.safeParse({ ...draft, suspectedCauses: [], recommendedChecks: [] }).success, false);
+  const presentation = new TemporaryDiagnosticPresenter().createPresentation(ledger.assemble("느림", draft));
+  const messages = formatDiagnosticPresentationMessages(presentation);
+  assert.ok(messages.every(message => message.length <= 1900));
+  const text = messages.join("");
+  assert.ok(text.includes("현재 연결 조회") && text.includes("이전 시점은 조회하지 않음"));
+  assert.match(text, /표시 생략/);
+  assert.equal((JSON.stringify(presentation).match(/긴 관측값/g) ?? []).length, 700);
+  assert.doesNotMatch(text, /Recommended Actions|Suspected Cause|\*\*Status/);
+});
