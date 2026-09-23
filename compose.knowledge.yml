@@ -1,0 +1,24 @@
+name: amdc-knowledge-local
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    ports:
+      - "127.0.0.1:55432:5432"
+    environment:
+      POSTGRES_DB: amdc_knowledge
+      POSTGRES_USER: amdc_local
+      POSTGRES_PASSWORD_FILE: /run/secrets/knowledge_password
+    secrets:
+      - knowledge_password
+    volumes:
+      - knowledge_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U amdc_local -d amdc_knowledge"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+secrets:
+  knowledge_password:
+    file: .codex-temp/knowledge-password
+volumes:
+  knowledge_data:
