@@ -15,21 +15,23 @@ const get = (name: string) => { const tool = registry.getTool(name); assert.ok(t
 
 test("Prometheus labels are literals; metric identifiers cannot inject PromQL", () => {
   const tool = get("prometheus_get_metric_value_by_database");
-  assert.equal(tool.execution.type, "prometheus_http");
-  if(tool.execution.type !== "prometheus_http") return;
+  const execution = tool.execution;
+  assert.equal(execution.type, "prometheus_http");
+  if(execution.type !== "prometheus_http") return;
   const value = 'a"} or up{job="x\\y';
-  const query = buildPrometheusParameters(tool.execution, {metricName:"amdb_db_size_bytes", databaseName:value}, ctx.referenceTime);
+  const query = buildPrometheusParameters(execution, {metricName:"amdb_db_size_bytes", databaseName:value}, ctx.referenceTime);
   assert.equal(query.query, `{__name__="amdb_db_size_bytes",database=${JSON.stringify(value)}}`);
-  assert.throws(() => buildPrometheusParameters(tool.execution, {metricName:"up or vector(1)"}, ctx.referenceTime));
+  assert.throws(() => buildPrometheusParameters(execution, {metricName:"up or vector(1)"}, ctx.referenceTime));
 });
 
 test("range windows, step and missing times are bounded before transport", async () => {
   const tool = get("prometheus_get_metric_range");
-  if(tool.execution.type !== "prometheus_http") assert.fail();
+  const execution = tool.execution;
+  if(execution.type !== "prometheus_http") return assert.fail();
   const args = {metricName:"up",start:"2026-09-17T11:00:00Z",end:"2026-09-17T12:00:00Z",stepSeconds:60};
-  assert.equal(buildPrometheusParameters(tool.execution,args,ctx.referenceTime).step,"60");
+  assert.equal(buildPrometheusParameters(execution,args,ctx.referenceTime).step,"60");
   for(const invalid of [{...args,start:args.end,end:args.start},{...args,start:"2026-09-15T12:00:00Z"},{...args,stepSeconds:0},{...args,start:"2026-09-16T12:00:00Z",stepSeconds:15}]) {
-    assert.throws(()=>buildPrometheusParameters(tool.execution,invalid,ctx.referenceTime));
+    assert.throws(()=>buildPrometheusParameters(execution,invalid,ctx.referenceTime));
   }
   for(const name of ["prometheus_get_metric_value","prometheus_get_metric_series","proxysql_get_processlist_by_database","proxysql_get_processlist_by_session_id"]) {
     assert.equal(jsonObjectSchemaToZod(get(name).inputSchema).safeParse({}).success,false);

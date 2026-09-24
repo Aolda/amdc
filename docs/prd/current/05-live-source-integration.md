@@ -1,7 +1,7 @@
 # PRD 05. Live Source Integration
 
 Status: current  
-Last reviewed: 2026-07-22  
+Last reviewed: 2026-09-04
 Owns: Prometheus/Loki/AMDB Backend의 exact live mapping, source credential binding,
 dev read-only smoke gate
 
@@ -15,6 +15,13 @@ Prometheus metric/label, LogQL selector, Backend health route와 response shape�
 과거 문서에는 MCP/Claude Code 기반 예시와 일반적인 health/metrics/logs 흐름이
 있지만, 이를 2026-07 LangChain P0의 live contract로 복사하면 정상 데이터를 잘못
 판정하거나 다른 service/environment를 조회할 수 있다.
+
+2026-09-04 `origin/develop@71f2069`에는 환경별 URL로 generic GET을 수행하는
+`system_check_configured_http_health` 경로가 하나 존재한다. 이 경로는 HTTP 상태와
+지연 시간만 정규화하며 P0 `backend_health`의 exact route/response schema, contract
+version/hash, response byte limit과 Run/Evidence 저장을 구현하지 않는다. Prometheus와
+Loki 작업도 아직 `source_unavailable`이므로 이 시제품을 live source gate 승격
+근거로 사용하지 않는다.
 
 [Trade-off Analysis]
 
