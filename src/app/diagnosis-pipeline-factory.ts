@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { LangChainDiagnosticAgent } from "../agent/langchain-diagnostic-agent.js";
 import { TemporaryDiagnosticPresenter } from "../report/temporary-diagnostic-presenter.js";
 import type { DiagnosticRunnerContext } from "../diagnostic/types.js";
+import { ConsoleDiagnosticTraceSink } from "../observability/diagnostic-trace.js";
 import { loadToolCatalogFromYaml } from "../tools/catalog-loader.js";
 import { PluginRegistry } from "../tools/plugin-registry.js";
 import { YamlToolRuntime } from "../tools/yaml-tool-runtime.js";
@@ -14,6 +15,7 @@ interface ToolRuntimeBundle {
 
 let toolRuntimeBundle: ToolRuntimeBundle | null = null;
 const pipelines = new Map<string, DiagnosisPipeline>();
+const diagnosticTraceSink = new ConsoleDiagnosticTraceSink();
 
 export function createDiagnosisPipeline(context: DiagnosticRunnerContext): DiagnosisPipeline {
   const key = `${context.runnerMode}:${context.agentModel}`;
@@ -28,7 +30,8 @@ export function createDiagnosisPipeline(context: DiagnosticRunnerContext): Diagn
     new LangChainDiagnosticAgent(bundle.registry, bundle.runtime, {
       model: context.agentModel,
       apiKey: requireOpenAiApiKey(context),
-      baseUrl: context.openaiBaseUrl
+      baseUrl: context.openaiBaseUrl,
+      traceSink: diagnosticTraceSink
     }),
     new TemporaryDiagnosticPresenter()
   );
