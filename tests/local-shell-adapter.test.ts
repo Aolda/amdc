@@ -45,14 +45,14 @@ const context: ToolRuntimeContext = {
 
 test("injects only the server-owned environment value into the fixed command", async () => {
   const result = await withEnvironment(
-    { AMDC_DEV_HEALTHCHECK_URL: "http://backend.internal/health?name=o'hare" },
+    { AMDC_DEV_HEALTHCHECK_URL: "http://backend.internal/health/o'hare" },
     async () => renderLocalShellCommand(execution, context)
   );
 
   assert.deepEqual(result, {
     ok: true,
     command:
-      "curl --silent --include 'http://backend.internal/health?name=o'\"'\"'hare'"
+      "curl --silent --include 'http://backend.internal/health/o'\"'\"'hare'"
   });
 });
 

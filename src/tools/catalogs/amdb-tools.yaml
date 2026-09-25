@@ -20,7 +20,7 @@ plugins:
         execution:
           type: local_shell
           command: |
-            curl --silent --show-error --include --request GET {{ env.backend_health_url }}
+            curl --disable --globoff --proto =http,https --proto-redir =http,https --max-redirs 0 --silent --show-error --include --request GET {{ env.backend_health_url }}
           environment:
             backend_health_url:
               dev: AMDC_DEV_HEALTHCHECK_URL

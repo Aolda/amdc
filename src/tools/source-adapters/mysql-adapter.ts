@@ -106,7 +106,12 @@ export async function executeMysqlTool(tool: ToolDefinition, args: Record<string
       if (expired) { reader.destroy(); throw new Error("tool_timeout"); }
       const sql = proxy ? query.sql : query.sql.replace(/^SELECT /, `SELECT /*+ MAX_EXECUTION_TIME(${Math.max(1, Math.floor(tool.timeoutMs))}) */ `);
       const rows = await reader.execute(sql, query.values);
-      const selected = rows.slice(0, query.limit);
+      // SQL text can contain secrets unknown to this process. Never send it to a model.
+      const selected = rows.slice(0, query.limit).map(row => Object.fromEntries(
+        Object.entries(row).map(([key, value]) => [key,
+          /^(currentStatement|info|digest_text)$/i.test(key) && value !== null
+            ? "[SQL text omitted]" : value])
+      ));
       const body = JSON.stringify(selected);
       if (Buffer.byteLength(body) > MAX_BYTES) return failure("tool_output_too_large");
       const secrets = Object.entries(environment).filter(([k,v]) => /TOKEN|PASSWORD|SECRET|API_KEY|PRIVATE_KEY|SESSION/i.test(k) && v && v.length >= 8).map(([,v]) => v!);

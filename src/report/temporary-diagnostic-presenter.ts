@@ -13,12 +13,14 @@ export class TemporaryDiagnosticPresenter {
     );
 
     return {
-      status:
-        diagnosis.toolErrors.length > 0
+      status: hasCritical || hasWarning
+        ? "problem_detected"
+        : diagnosis.toolErrors.length > 0 || diagnosis.observations.length === 0 ||
+          (diagnosis.rawResults?.length ?? 0) > 0 || diagnosis.incompleteReasons.length > 0 ||
+          diagnosis.observations.some(observation => observation.status !== "normal") ||
+          diagnosis.preliminaryFindings.some(finding => finding.level !== "normal")
           ? "insufficient_tools"
-          : hasCritical || hasWarning
-            ? "problem_detected"
-            : "no_problem_detected",
+          : "no_problem_detected",
       summary: buildSummary(diagnosis),
       suspectedCause: diagnosis.suspectedCauses[0]?.cause ?? "Unknown",
       recommendedActions:

@@ -19,8 +19,10 @@ export function createAmdcLangChainTools(
 ) {
   // One set per diagnosis; reserve synchronously before parallel tool execution.
   const executed = new Set<string>();
-  return descriptors.map((descriptor) =>
-    tool(
+  const attemptsByTool = new Map<string, number>();
+  let tail: Promise<unknown> = Promise.resolve();
+  return descriptors.map((descriptor) => {
+    const wrapped = tool(
       async (args: Record<string, unknown>) => {
         const startedAt = Date.now();
         await context.traceSink.record({
@@ -53,7 +55,12 @@ export function createAmdcLangChainTools(
             environment: context.environment,
             referenceTime: context.referenceTime
           }
-        );
+        ).catch(() => ({
+          ok: false as const,
+          error: { toolName: descriptor.name, pluginName: descriptor.pluginName,
+            code: "source_request_failed" as const, message: "Tool execution failed unexpectedly.",
+            occurredAt: new Date().toISOString() }
+        }));
 
         await context.traceSink.record({
           event: "tool.finished",
@@ -79,6 +86,19 @@ export function createAmdcLangChainTools(
         description: descriptor.description,
         schema: jsonObjectSchemaToZod(descriptor.inputSchema)
       }
-    )
-  );
+    );
+    const invoke = wrapped.invoke.bind(wrapped);
+    wrapped.invoke = (input, config) => {
+      // Count by tool identity, independent of arguments, before any await.
+      const attempts = (attemptsByTool.get(descriptor.name) ?? 0) + 1;
+      attemptsByTool.set(descriptor.name, attempts);
+      if (attempts > 8) {
+        return Promise.reject(new Error("per_tool_call_budget_exhausted"));
+      }
+      const pending = tail.then(() => invoke(input, config));
+      tail = pending.then(() => undefined, () => undefined);
+      return pending;
+    };
+    return wrapped;
+  });
 }

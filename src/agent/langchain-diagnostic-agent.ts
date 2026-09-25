@@ -10,6 +10,7 @@ import { toSafeErrorMetadata } from "../observability/safe-error-metadata.js";
 import { PluginRegistry } from "../tools/plugin-registry.js";
 import type {
   ObservationStatus,
+  RawToolResult,
   PluginName,
   SanitizedToolError,
   ToolObservation,
@@ -114,6 +115,7 @@ export class LangChainDiagnosticAgent implements DiagnosticAgentPort {
           toolArtifacts.toolNames.has(descriptor.name)
         ),
         observations: toolArtifacts.observations,
+        rawResults: toolArtifacts.rawResults,
         toolErrors: toolArtifacts.toolErrors,
         preliminaryFindings: toPreliminaryFindings(draft),
         suspectedCauses: toSuspectedCauses(draft),
@@ -184,12 +186,14 @@ function buildUserPrompt(
   ].join("\n");
 }
 
-function extractToolArtifacts(messages: readonly unknown[]): {
+export function extractToolArtifacts(messages: readonly unknown[]): {
   readonly observations: readonly ToolObservation[];
+  readonly rawResults: readonly RawToolResult[];
   readonly toolErrors: readonly SanitizedToolError[];
   readonly toolNames: ReadonlySet<string>;
 } {
   const observations: ToolObservation[] = [];
+  const rawResults: RawToolResult[] = [];
   const toolErrors: SanitizedToolError[] = [];
   const toolNames = new Set<string>();
 
@@ -213,6 +217,8 @@ function extractToolArtifacts(messages: readonly unknown[]): {
 
       if (parsed.ok === true && isRecord(parsed.observation)) {
         observations.push(parsed.observation as unknown as ToolObservation);
+      } else if (parsed.ok === true && isRecord(parsed.rawResult)) {
+        rawResults.push(parsed.rawResult as unknown as RawToolResult);
       } else if (parsed.ok === false && isRecord(parsed.error)) {
         toolErrors.push(parsed.error as unknown as SanitizedToolError);
       }
@@ -221,7 +227,7 @@ function extractToolArtifacts(messages: readonly unknown[]): {
     }
   }
 
-  return { observations, toolErrors, toolNames };
+  return { observations, rawResults, toolErrors, toolNames };
 }
 
 function toInferredDomains(draft: DiagnosisDraft): readonly InferredDomain[] {
