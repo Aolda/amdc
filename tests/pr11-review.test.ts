@@ -35,8 +35,9 @@ test('changing IDs cannot bypass each tool limit; other tools and new diagnoses 
   const runtime: ToolRuntime = { execute:async () => { calls++; peak=Math.max(peak,++active); await new Promise(resolve=>setTimeout(resolve,2)); active--; return raw; } };
   const tools=createAmdcLangChainTools([descriptor,{...descriptor,name:'other'}],runtime,context);
   const results=await Promise.allSettled(Array.from({length:20},(_,id)=>tools[id%2].invoke({id})));
-  assert.equal(calls,16); assert.equal(peak,1); assert.equal(results.filter(r=>r.status==='rejected').length,4);
-  for (const result of results) if(result.status==='rejected') assert.match(String(result.reason),/per_tool_call_budget_exhausted/);
+  assert.equal(calls,16); assert.equal(peak,1); assert.equal(results.filter(r=>r.status==='rejected').length,0);
+  assert.equal(results.filter(r=>r.status==='fulfilled' && String(r.value).includes('tool_call_limit_reached')).length,4);
+
   await createAmdcLangChainTools([descriptor],runtime,{...context,runId:'second'})[0].invoke({id:0});
   assert.equal(calls,17);
 });
@@ -48,24 +49,24 @@ test('schema rejection, duplicate rejection and runtime errors consume budget wi
   assert.doesNotMatch(String(await tool.invoke({id:1})),/private-source-error/);
   assert.match(String(await tool.invoke({id:1})),/Identical tool input/);
   for(let id=2;id<=6;id++) await tool.invoke({id});
-  await assert.rejects(tool.invoke({id:7}),/per_tool_call_budget_exhausted/);
+  assert.match(String(await tool.invoke({id:7})),/tool_call_limit_reached/);
   assert.equal(calls,6);
 });
 
-test('MySQL and ProxySQL SQL text is omitted before wrapper/model output',async()=>{
+test('MySQL and ProxySQL retain SQL text for diagnostic integration',async()=>{
   for(const name of ['mysql_get_all_processlist','mysql_get_all_transactions','proxysql_get_all_processlist','proxysql_get_query_digests']) {
     const definition = registry.getTool(name)!;
     assert.ok(definition);
     assert.ok(definition.execution.type==='mysql_sql'||definition.execution.type==='proxysql_sql');
     const prefix=definition.execution.environmentPrefix.dev;
-    const secret='unregistered-fixture-value';
-    const result=await executeMysqlTool(definition,{},context,async()=>({ execute:async()=>[{connectionId:'1',currentStatement:secret,info:secret,digest_text:secret}],destroy(){} }),{[prefix+'HOST']:'fake',[prefix+'USER']:'fake',[prefix+'PASSWORD']:'fixture-password'});
+    const statement='SELECT id FROM fixture_table WHERE id = 1';
+    const result=await executeMysqlTool(definition,{},context,async()=>({ execute:async()=>[{connectionId:'1',currentStatement:statement,info:statement,digest_text:statement}],destroy(){} }),{[prefix+'HOST']:'fake',[prefix+'USER']:'fake',[prefix+'PASSWORD']:'fixture-password'});
     assert.ok(result.ok);
     const visible = registry.listAllTools().find(d=>d.name===definition.name)!;
     const [wrapped]=createAmdcLangChainTools([visible],{execute:async()=>result},context);
     const output=String(await wrapped.invoke({}));
-    assert.doesNotMatch(output,/unregistered-fixture-value/);
-    assert.match(output,/SQL text omitted/); assert.match(output,/connectionId/);
+    assert.ok(output.includes(statement));
+    assert.doesNotMatch(output,/SQL text omitted/); assert.match(output,/connectionId/);
   }
 });
 
@@ -92,20 +93,33 @@ import { ChatOpenAI } from '@langchain/openai';
 import { AIMessage, type BaseMessage } from '@langchain/core/messages';
 import { LangChainDiagnosticAgent } from '../src/agent/langchain-diagnostic-agent.js';
 
-test('actual LangChain loop preserves raw results and serializes a parallel model tool batch',async t=>{
+test('LangChain hides exhausted tools, preserves limit responses and continues with another tool',async t=>{
   const fixtureRegistry=new PluginRegistry({plugins:[{name:'mysql',description:'fixture',domainHints:['mysql'],tools:[{
     ...descriptor,access:{level:0,readOnly:true},source:'mysql',allowedEnvironments:['dev'],timeoutMs:1000,execution:{type:'source_adapter',operation:'fixture'}
-  }]}]});
+  },{...descriptor,name:'other',access:{level:0,readOnly:true},source:'mysql',allowedEnvironments:['dev'],timeoutMs:1000,execution:{type:'source_adapter',operation:'fixture'}}]}]});
   let modelCalls=0,active=0,peak=0,executions=0;
   t.mock.method(ChatOpenAI.prototype,'_generate',async(messages:BaseMessage[],options:{tools?:{function:{name:string}}[]})=>{
     modelCalls++;
     const names=options.tools?.map(t=>t.function.name)??[];
     let calls;
     if(modelCalls===1) calls=[{id:'select',name:'select_plugin',args:{pluginName:'mysql'},type:'tool_call' as const}];
-    else if(modelCalls===2) calls=Array.from({length:8},(_,id)=>({id:`read-${id}`,name:'read',args:{id},type:'tool_call' as const}));
-    else {
-      assert.equal(modelCalls,3);
-      assert.equal(messages.filter(m=>m.name==='read').length,8);
+    else if(modelCalls===2) calls=Array.from({length:9},(_,id)=>({id:`read-${id}`,name:'read',args:{id},type:'tool_call' as const}));
+    else if(modelCalls===3) {
+      assert.ok(!names.includes('read')); assert.ok(names.includes('other'));
+      const results=messages.filter(m=>m.name==='read');
+      assert.equal(results.length,9);
+      assert.ok(results.some(m=>String(m.content).includes('tool_call_limit_reached')));
+      calls=[{id:'stale-read',name:'read',args:{id:99},type:'tool_call' as const}];
+    } else if(modelCalls===4) {
+      assert.match(String(messages.filter(m=>m.name==='read').at(-1)!.content),/tool_call_limit_reached/);
+      calls=[{id:'select-again',name:'select_plugin',args:{pluginName:'mysql'},type:'tool_call' as const}];
+    } else if(modelCalls===5) {
+      assert.ok(!names.includes('read')); assert.ok(names.includes('other'));
+      const payload=JSON.parse(String(messages.filter(m=>m.name==='select_plugin').at(-1)!.content));
+      assert.deepEqual(payload.loadedTools.map((t:{name:string})=>t.name),['other']);
+      calls=[{id:'other-call',name:'other',args:{id:1},type:'tool_call' as const}];
+    } else {
+      assert.equal(modelCalls,6);
       calls=[{id:'final',name:names.find(n=>n.startsWith('extract-'))!,args:{inferredDomains:[],preliminaryFindings:[{finding:'Suspected failure',basis:['read'],level:'critical'}],suspectedCauses:[],recommendedChecks:[],incompleteReasons:[]},type:'tool_call' as const}];
     }
     return {generations:[{text:'',message:new AIMessage({content:'',tool_calls:calls})}]};
@@ -114,6 +128,7 @@ test('actual LangChain loop preserves raw results and serializes a parallel mode
     executions++;peak=Math.max(peak,++active);await new Promise(resolve=>setTimeout(resolve,2));active--;return raw;
   }},{model:'fixture',apiKey:'fixture'});
   const result=await agent.diagnose({symptom:'fixture',environment:'dev',requestedBy:'fixture',receivedAt:context.referenceTime.toISOString()});
-  assert.equal(executions,8);assert.equal(peak,1);assert.equal(result.rawResults?.length,8);
+  assert.equal(executions,9);assert.equal(peak,1);assert.equal(result.rawResults?.length,9);
+  assert.ok(result.toolErrors.some(e=>String(e.code)==='tool_call_limit_reached'));
   assert.equal(new TemporaryDiagnosticPresenter().createPresentation(result).status,'insufficient_tools');
 });

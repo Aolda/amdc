@@ -26,7 +26,8 @@ export interface PluginLazyLoadingTraceContext {
 
 export function createPluginLazyLoadingMiddleware(
   registry: PluginRegistry,
-  traceContext?: PluginLazyLoadingTraceContext
+  traceContext?: PluginLazyLoadingTraceContext,
+  disabledTools: ReadonlySet<string> = new Set()
 ) {
   let modelCallIndex = 0;
   const pluginNames = registry.listPlugins().map((plugin) => plugin.name);
@@ -57,7 +58,7 @@ export function createPluginLazyLoadingMiddleware(
               name: PLUGIN_SELECTION_TOOL_NAME,
               tool_call_id: runtime.toolCallId,
               content: JSON.stringify(
-                createPluginSelectionPayload(registry, pluginName)
+                createPluginSelectionPayload(registry, pluginName, disabledTools)
               )
             })
           ]
@@ -92,7 +93,8 @@ export function createPluginLazyLoadingMiddleware(
       const visibleTools = filterToolsForActivePlugin(
         request.tools,
         registry,
-        activePlugin
+        activePlugin,
+        disabledTools
       );
 
       await traceContext?.traceSink.record({
@@ -184,11 +186,12 @@ export function createNextPluginSelectionState(
 
 export function createPluginSelectionPayload(
   registry: PluginRegistry,
-  pluginName: PluginName
+  pluginName: PluginName,
+  disabledTools: ReadonlySet<string> = new Set()
 ) {
   return {
     selectedPlugin: pluginName,
-    loadedTools: registry.listToolsForPlugins([pluginName]).map((loadedTool) => ({
+    loadedTools: registry.listToolsForPlugins([pluginName]).filter(tool => !disabledTools.has(tool.name)).map((loadedTool) => ({
       name: loadedTool.name,
       description: loadedTool.description,
       inputSchema: loadedTool.inputSchema,
@@ -200,7 +203,8 @@ export function createPluginSelectionPayload(
 export function filterToolsForActivePlugin<T extends LangChainAgentTool>(
   tools: readonly T[],
   registry: PluginRegistry,
-  activePlugin: string | null
+  activePlugin: string | null,
+  disabledTools: ReadonlySet<string> = new Set()
 ): T[] {
   const selected = normalizePluginNames(
     activePlugin === null ? [] : [activePlugin],
@@ -216,7 +220,8 @@ export function filterToolsForActivePlugin<T extends LangChainAgentTool>(
       typeof availableTool === "object" &&
       "name" in availableTool &&
       typeof availableTool.name === "string" &&
-      visibleToolNames.has(availableTool.name)
+      visibleToolNames.has(availableTool.name) &&
+      !disabledTools.has(availableTool.name)
   );
 }
 

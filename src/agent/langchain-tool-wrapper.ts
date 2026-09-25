@@ -10,6 +10,7 @@ export interface LangChainToolWrapperContext {
   readonly referenceTime: Date;
   readonly runId: string;
   readonly traceSink: DiagnosticTraceSink;
+  readonly disabledTools?: Set<string>;
 }
 
 export function createAmdcLangChainTools(
@@ -19,6 +20,7 @@ export function createAmdcLangChainTools(
 ) {
   // One set per diagnosis; reserve synchronously before parallel tool execution.
   const executed = new Set<string>();
+  const disabledTools = context.disabledTools ?? new Set<string>();
   const attemptsByTool = new Map<string, number>();
   let tail: Promise<unknown> = Promise.resolve();
   return descriptors.map((descriptor) => {
@@ -87,13 +89,21 @@ export function createAmdcLangChainTools(
         schema: jsonObjectSchemaToZod(descriptor.inputSchema)
       }
     );
+    const limited = tool(async () => JSON.stringify({ ok: false, error: {
+      toolName: descriptor.name, pluginName: descriptor.pluginName,
+      code: "tool_call_limit_reached",
+      message: "This tool is disabled for this diagnosis after 8 attempts. Use its earlier results or another available tool. If evidence is insufficient, report that limitation.",
+      occurredAt: new Date().toISOString()
+    } }), { name: descriptor.name, description: descriptor.description,
+      schema: jsonObjectSchemaToZod({ type: "object", properties: {} }) });
     const invoke = wrapped.invoke.bind(wrapped);
     wrapped.invoke = (input, config) => {
       // Count by tool identity, independent of arguments, before any await.
       const attempts = (attemptsByTool.get(descriptor.name) ?? 0) + 1;
-      attemptsByTool.set(descriptor.name, attempts);
+      attemptsByTool.set(descriptor.name, Math.min(attempts, 9));
+      if (attempts >= 8) disabledTools.add(descriptor.name);
       if (attempts > 8) {
-        return Promise.reject(new Error("per_tool_call_budget_exhausted"));
+        return limited.invoke(input, config);
       }
       const pending = tail.then(() => invoke(input, config));
       tail = pending.then(() => undefined, () => undefined);
