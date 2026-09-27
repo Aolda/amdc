@@ -28,3 +28,7 @@ service-account*.json
 *.sqlite
 *.sqlite-*
 *.db
+
+# Local MVP reports and isolated development checkouts
+data/reports/
+.worktrees/

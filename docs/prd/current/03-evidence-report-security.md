@@ -1,10 +1,43 @@
 # PRD 03. 증거, 리포트 및 보안
 
-정본 증거와 리포트의 검증·영속화·전달 계약을 정의한다. 고정 문구는 스키마 1.1.0 상수와 정확히 일치해야 하며, 모델은 원인 초안만 작성한다. 최신 리뷰 보정은 팀 승인 대기다.
+증거와 리포트의 검증·저장·전달 계약을 정의한다. 기존 V1과 별도로 1차 MVP의 파일 저장과 Discord 전달을 정한다. 모델은 원인 가설만 작성하고 서버가 실행 기록·한계와 최종 보고서를 조립한다.
 
 상태: 현재
 최종 검토: 2026-09-11 (리뷰 보정안, 팀 승인 대기)
 소유 범위: 증거/도구 오류, 리포트 조립/검증/영속화, Discord 전달 실패, 보안/관측성
+
+## 1차 MVP 리포트와 Discord 전달
+
+MVP Gate Status: ready_for_verification. 이후 기존 V1 절과 별도인 로컬 테스트 경로다.
+
+출력 버전은 `diagnosis-report/1.0.0`이다. 필드는 `schema_version`, `diagnosis_id`,
+`created_at`, `completion_reason`, `summary`, `observations`, `limitations`,
+`suspected_cause`, `recommended_next_action`이다. 호출 투영에는 `seq`, `tool_call_id`,
+`tool`, `plugin`, `observed_at`, `status`, `error_code`, `execution_summary`,
+`diagnostic_comment`, `related_call_ids`만 허용한다. 정확한 실행 검증기는
+`src/report-agent/mvp-report.ts`의 `validateMvpReport`다.
+
+모델은 `suspected_cause`만 작성한다. 나머지는 서버가 원장에서 조립한다.
+성공과 오류를 모두 보존하고 수집 실패·잘림·근거 부족을 표시한다. 진단 코멘트와
+Report 모델 가설은 각각 해석으로 표시하며 조회 성공을 정상 판정으로 바꾸지 않는다.
+
+순서는 검증 → 파일 저장 → 재조회·일치 확인 → 형식화 → Discord 응답이다.
+최대 256 KiB 보고서를 `AMDC_REPORT_DIRECTORY/<diagnosis_id>.json`에 저장한다.
+임시 파일 쓰기·동기화 후 덮어쓰지 않는 원자적 게시를 사용하며 동일 ID의
+동시 저장은 하나만 성공한다. 이는 SQLite Run 트랜잭션이나 전원 장애 복구 보증이 아니다.
+
+Discord는 `/diagnose`를 받은 설정 서버의 상호작용 응답에 최대 1,900자의 요약과
+정제된 `amdc-report.md` 하나를 전송한다. 원시 원장 JSON과 도구 결과는 첨부하지 않는다.
+멘션을 차단하며 모델/저장 실패 시 보고서 대신 고정 실패 안내만 보낸다.
+저장 후 전달 실패는 파일을 유지하고 확인 불가 이벤트로 기록한다.
+
+애플리케이션의 `editReply`는 1회만 시도한다. SDK의 5xx/전송 오류 재시도도 0이다.
+SDK의 429 속도 제한 대기는 별도 동작이다. 프로세스 내 중복 상호작용 방지는
+최대 1,024개·15분이며 재시작을 넘는 중복 처리나 전역 동시 실행 대기열은 제공하지 않는다.
+`mock`은 고정 연결 안내만 보내고 진단·모델·리포트 저장을 수행하지 않는다.
+
+입력과 모델 예산은 [PRD 06](06-diagnostic-agent-tool-runtime.md#1차-mvp-진단-원장-인계),
+실행과 검증 현황은 [Discord MVP 안내](../../discord-mvp.md)에 둔다.
 
 ## 게이트 검토
 

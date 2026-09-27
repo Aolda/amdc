@@ -10,6 +10,7 @@ export interface AppConfig {
   agentModel: string;
   openaiApiKey?: string;
   openaiBaseUrl?: string;
+  reportDirectory?: string;
 }
 
 function readRequiredEnv(name: string): string {
@@ -67,7 +68,8 @@ export function loadConfig(): AppConfig {
     diagnosticRunnerMode,
     agentModel: agentModel || "mock",
     openaiApiKey,
-    openaiBaseUrl
+    openaiBaseUrl,
+    reportDirectory: process.env.AMDC_REPORT_DIRECTORY?.trim() || "./data/reports"
   };
 }
 

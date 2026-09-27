@@ -1,6 +1,6 @@
 # AMDC P0 구현 PRD 패키지
 
-현재 P0 계약의 단일 진입점이다. 기존 계약과 9월 22일 제공된 구조·진단 기록의 차이를 연결한다. 새 양식의 Report Agent 인계는 설계 단계이며 기존 리뷰 보정과 제품 구현 검증은 별도로 남아 있다.
+현재 P0 계약의 단일 진입점이다. 기존 V1 계약과 별도로 팀 진단 원장을 받는 1차 MVP 경로를 정의한다. MVP의 로컬 검증과 실제 서비스 연결을 구분하며 P0 전체 완료 여부는 별도로 판단한다.
 
 상태: 정본 구현 패키지
 패키지 게이트 상태: ready_for_design
@@ -22,6 +22,17 @@ API, 대기열, LangChain/도구 코어, 명시적 가짜 실행기, 증거/리�
 진단 정적/YAML 런타임 정합화가 미확정이므로 패키지 전체는
 `ready_for_design`이다. PR #3·#5·#6의 Discord/Diagnostic 코드는 보존할
 상위 시제품/전환 증거이며 현재 P0 전달 완료 증거는 아니다.
+
+## 2026-09-27 1차 Report MVP
+
+팀 진단 PR의 `DiagnosisHandoff`를 받는 별도 MVP 경로는 구현되어 검증 단계다.
+`diag-*` 원장과 기존 Backend 5xx V1 계약을 강제 변환하지 않는다.
+MVP 입력과 모델 예산은 [PRD 06](06-diagnostic-agent-tool-runtime.md#1차-mvp-진단-원장-인계),
+출력·저장·전달은 [PRD 03](03-evidence-report-security.md#1차-mvp-리포트와-discord-전달)이 소유한다.
+실행 방법과 검증 현황은 [Discord MVP 안내](../../discord-mvp.md)에 둔다.
+
+위 패키지 게이트와 `전달 상태`는 REST/SQLite를 포함한 기존 P0 전체 기준이다.
+MVP 로컬 통과만으로 이를 승격하지 않는다. 아래 날짜별 분석은 당시 기록이다.
 
 ## 2026-09-22 현재 구조 및 진단 기록 반영
 
