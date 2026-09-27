@@ -1,6 +1,6 @@
 # AMDC P0 구현 PRD 패키지
 
-현재 P0 계약의 단일 진입점이다. 핵심·리포트 계약과 실제 구현 진척을 구분하고, 스키마 상수·진단 포트 연결·mock 연결 확인의 리뷰 보정안을 안내한다. 팀 승인과 제품 구현 검증은 아직 남아 있다.
+현재 P0 계약의 단일 진입점이다. 기존 계약과 9월 22일 제공된 구조·진단 기록의 차이를 연결한다. 새 양식의 Report Agent 인계는 설계 단계이며 기존 리뷰 보정과 제품 구현 검증은 별도로 남아 있다.
 
 상태: 정본 구현 패키지
 패키지 게이트 상태: ready_for_design
@@ -23,6 +23,17 @@ API, 대기열, LangChain/도구 코어, 명시적 가짜 실행기, 증거/리�
 `ready_for_design`이다. PR #3·#5·#6의 Discord/Diagnostic 코드는 보존할
 상위 시제품/전환 증거이며 현재 P0 전달 완료 증거는 아니다.
 
+## 2026-09-22 현재 구조 및 진단 기록 반영
+
+사용자 제공 구조·기록 양식은 [현재 아키텍처](../../../ARCHITECTURE.md)와
+[PRD 06의 진단 기록 입력 자료](06-diagnostic-agent-tool-runtime.md#2026-09-22-진단-기록-입력-자료)에 반영했다.
+[Report Agent 설계 준비안](../../design/report-agent-preparation.md)은 기존 계약과의 차이,
+생산자·소비자 결정 순서와 검증 시나리오를 연결한다.
+
+최신 MySQL 기록 양식을 받는 개정안은 ready_for_design이다.
+이 자료는 기존 Backend 5xx 전용 V1이나 정적 도구·SQLite 계약을 자동으로 대체하지 않는다.
+위 기존 핵심/리포트 게이트는 기존 계약 범위의 준비도이며 새 양식의 구현 준비도를 뜻하지 않는다.
+Delivery Status는 승격하지 않는다. 이하 2026-09-04 구현 대조는 당시 기록이다.
 ## 읽기 순서
 
 1. [00-product-scope-and-decisions.md](00-product-scope-and-decisions.md)

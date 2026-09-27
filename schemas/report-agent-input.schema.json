@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://amdc.local/schemas/report-agent-input/1.0.0",
+  "title": "Report Agent input V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "report_schema_version", "run", "diagnosis", "evidence_schema_version", "tool_error_schema_version", "evidence", "tool_errors"],
+  "properties": {
+    "contract_version": {"const": "report-agent-input/1.0.0"},
+    "report_schema_version": {"const": "1.1.0"},
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "scenario", "diagnostic_reference_time"],
+      "properties": {
+        "run_id": {"$ref": "https://amdc.local/schemas/evidence/1.1.0#/properties/run_id"},
+        "scenario": {"const": "backend_5xx_increase"},
+        "diagnostic_reference_time": {"$ref": "https://amdc.local/schemas/evidence/1.1.0#/$defs/timestamp"}
+      }
+    },
+    "diagnosis": {"$ref": "#/$defs/diagnosis"},
+    "evidence_schema_version": {"const": "1.1.0"},
+    "tool_error_schema_version": {"const": "1.0.0"},
+    "evidence": {"type": "array", "maxItems": 8, "items": {"$ref": "https://amdc.local/schemas/evidence/1.1.0"}},
+    "tool_errors": {"type": "array", "maxItems": 8, "items": {"$ref": "https://amdc.local/schemas/tool-error/1.0.0"}}
+  },
+  "$defs": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001F\\u007F\\u0085\\u2028\\u2029])\\S(?:[\\s\\S]*\\S)?$"
+    },
+    "basis": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "oneOf": [
+          {"$ref": "https://amdc.local/schemas/evidence/1.1.0#/properties/evidence_id"},
+          {"pattern": "^tool:tc_[0-7][0-9A-HJKMNP-TV-Z]{25}/[a-z_]+$"}
+        ]
+      }
+    },
+    "diagnosis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "inferred_domains", "preliminary_findings", "suspected_causes", "recommended_checks", "incomplete_reasons"],
+      "properties": {
+        "contract_version": {"const": "diagnosis-result/1.0.0"},
+        "inferred_domains": {
+          "type": "array", "maxItems": 8,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["domain", "reason"],
+            "properties": {"domain": {"$ref": "#/$defs/text"}, "reason": {"$ref": "#/$defs/text"}}
+          }
+        },
+        "preliminary_findings": {
+          "type": "array", "maxItems": 20,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["finding", "basis", "level"],
+            "properties": {
+              "finding": {"$ref": "#/$defs/text"},
+              "basis": {"$ref": "#/$defs/basis"},
+              "level": {"enum": ["normal", "warning", "critical", "unknown"]}
+            }
+          }
+        },
+        "suspected_causes": {
+          "type": "array", "maxItems": 10,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["cause", "basis", "confidence"],
+            "properties": {
+              "cause": {"$ref": "#/$defs/text"},
+              "basis": {"$ref": "#/$defs/basis"},
+              "confidence": {"enum": ["low", "medium", "high"]}
+            }
+          }
+        },
+        "recommended_checks": {"type": "array", "maxItems": 20, "items": {"$ref": "#/$defs/text"}},
+        "incomplete_reasons": {"type": "array", "maxItems": 20, "items": {"$ref": "#/$defs/text"}}
+      }
+    }
+  }
+}
+
