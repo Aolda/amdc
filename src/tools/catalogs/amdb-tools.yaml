@@ -41,112 +41,21 @@ plugins:
         execution:
           type: source_adapter
           operation: system_check_backend_health
-      - name: system_check_prometheus_targets
-        description: Check Prometheus target availability for MySQL, ProxySQL, node exporter, and AMDB custom exporter.
-        access:
-          level: 0
-          readOnly: true
-        source: prometheus
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties: {}
-        execution:
-          type: source_adapter
-          operation: system_check_prometheus_targets
 
-  - name: logs
-    description: Loki-based log search and log pattern summarization tools.
+  - name: prometheus
+    description: Tools that read Prometheus collection target and metric metadata.
     domainHints:
-      - log
-      - logs
-      - error
-      - timeout
-      - exception
-      - 인증
-      - 오류
-      - 로그
-      - 접속
-    tools:
-      - name: logs_search_service_errors
-        description: Search recent logs for a selected service and summarize repeated warning or error patterns.
-        access:
-          level: 0
-          readOnly: true
-        source: loki
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 10000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            service:
-              type: string
-              enum: [backend, celery-worker, celery-beat, custom-exporter, mysql, metadata-mysql, proxysql, redis]
-              description: Docker compose service label to search.
-            windowMinutes:
-              type: number
-              enum: [5, 10, 30]
-            maxPatterns:
-              type: number
-              minimum: 1
-              maximum: 10
-          required: [service, windowMinutes, maxPatterns]
-        execution:
-          type: source_adapter
-          operation: logs_search_service_errors
-      - name: logs_search_query_digest
-        description: Search custom-exporter query digest logs for a database user and summarize slow or heavy query patterns.
-        access:
-          level: 0
-          readOnly: true
-        source: loki
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 10000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            mysqlDbName:
-              type: string
-              minLength: 1
-              maxLength: 128
-              description: AMDB MySQL database/user name.
-            windowMinutes:
-              type: number
-              enum: [10, 30, 60]
-            search:
-              type: string
-              maxLength: 100
-              description: Optional digest text filter.
-          required: [mysqlDbName, windowMinutes]
-        execution:
-          type: source_adapter
-          operation: logs_search_query_digest
-
-  - name: metrics
-    description: Prometheus-based service, database, user, and container metric tools.
-    domainHints:
-      - metric
-      - metrics
       - prometheus
-      - 5xx
-      - latency
-      - connection
-      - memory
-      - cpu
-      - qps
-      - query
-      - 지표
-      - 증가
-      - 느림
-      - 연결
-      - 메모리
+      - target
+      - scrape
+      - exporter
+      - metric
+      - 수집
+      - 타깃
+      - 메트릭
     tools:
-      - name: metrics_get_database_overview
-        description: Read database size, query count, and connection overview metrics for all AMDB databases.
+      - name: prometheus_get_targets
+        description: Read active Prometheus targets, target labels, health, last scrape time, scrape duration, and last scrape error.
         access:
           level: 0
           readOnly: true
@@ -158,174 +67,16 @@ plugins:
           additionalProperties: false
           properties: {}
         execution:
-          type: source_adapter
-          operation: metrics_get_database_overview
-      - name: metrics_get_database_instant
-        description: Read current database size, table count, connection count, query count, slow query count, and average query time for one AMDB database.
-        access:
-          level: 0
-          readOnly: true
-        source: prometheus
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            mysqlDbName:
-              type: string
-              minLength: 1
-              maxLength: 128
-          required: [mysqlDbName]
-        execution:
-          type: source_adapter
-          operation: metrics_get_database_instant
-      - name: metrics_get_database_range
-        description: Read time series for database size, connections, query rate, slow queries, and average query time for one AMDB database.
-        access:
-          level: 0
-          readOnly: true
-        source: prometheus
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 10000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            mysqlDbName:
-              type: string
-              minLength: 1
-              maxLength: 128
-            windowMinutes:
-              type: number
-              enum: [10, 30, 60]
-          required: [mysqlDbName, windowMinutes]
-        execution:
-          type: source_adapter
-          operation: metrics_get_database_range
-      - name: metrics_get_user_connection_usage
-        description: Read ProxySQL and MySQL current connection usage for one AMDB database user.
-        access:
-          level: 0
-          readOnly: true
-        source: prometheus
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            username:
-              type: string
-              minLength: 1
-              maxLength: 128
-          required: [username]
-        execution:
-          type: source_adapter
-          operation: metrics_get_user_connection_usage
-      - name: metrics_get_mysql_global_status
-        description: Read MySQL server global status metrics such as uptime, connected threads, running threads, slow queries, and aborted connects.
-        access:
-          level: 0
-          readOnly: true
-        source: prometheus
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties: {}
-        execution:
-          type: source_adapter
-          operation: metrics_get_mysql_global_status
-      - name: metrics_get_container_resources
-        description: Read cAdvisor CPU, memory, network, filesystem, and OOM metrics for AMDB containers.
-        access:
-          level: 0
-          readOnly: true
-        source: cadvisor
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 10000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            service:
-              type: string
-              enum: [backend, celery-worker, celery-beat, custom-exporter, mysql, metadata-mysql, proxysql, redis]
-            windowMinutes:
-              type: number
-              enum: [10, 30, 60]
-          required: [service, windowMinutes]
-        execution:
-          type: source_adapter
-          operation: metrics_get_container_resources
+          type: prometheus_http
+          baseUrlEnvironment:
+            dev: AMDC_DEV_PROMETHEUS_URL
+            prod: AMDC_PROD_PROMETHEUS_URL
+          path: /api/v1/targets
+          query:
+            state: active
 
-  - name: proxy
-    description: ProxySQL read-only status, routing, and connection pool tools.
-    domainHints:
-      - proxy
-      - proxysql
-      - routing
-      - pool
-      - hostgroup
-      - connection
-      - 접속
-      - 라우팅
-      - 프록시
-    tools:
-      - name: proxy_list_query_rules
-        description: Read active ProxySQL runtime query rules from the AMDB admin API.
-        access:
-          level: 0
-          readOnly: true
-        source: amdb_admin_api
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties: {}
-        execution:
-          type: source_adapter
-          operation: proxy_list_query_rules
-      - name: proxy_check_connection_pool
-        description: Read ProxySQL connection pool connection, latency, and backend status metrics.
-        access:
-          level: 0
-          readOnly: true
-        source: prometheus
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties: {}
-        execution:
-          type: source_adapter
-          operation: proxy_check_connection_pool
-      - name: proxy_check_access_denials
-        description: Read ProxySQL access denial counters for password failures, max connection rejections, and SQL injection detection.
-        access:
-          level: 0
-          readOnly: true
-        source: prometheus
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            windowMinutes:
-              type: number
-              enum: [10, 30, 60]
-          required: [windowMinutes]
-        execution:
-          type: source_adapter
-          operation: proxy_check_access_denials
-
-  - name: db
-    description: AMDB metadata and database inventory read-only tools.
+  - name: mysql
+    description: Tools that read MySQL schemas, connections, transactions, data-lock waits, server metrics, and AMDB database inventory.
     domainHints:
       - db
       - database
@@ -338,13 +89,358 @@ plugins:
       - 용량
       - 할당량
     tools:
+      - name: mysql_list_schemas
+        description: Read non-system MySQL schema names, default character sets and collations.
+        access:
+          level: 0
+          readOnly: true
+        source: mysql
+        allowedEnvironments:
+          - dev
+          - prod
+        timeoutMs: 5000
+        input:
+          type: object
+          additionalProperties: false
+          properties:
+            namePrefix:
+              type: string
+              description: Optional literal schema name prefix; no wildcard expansion. Omit for all visible non-system schemas.
+              minLength: 1
+              maxLength: 128
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 200
+              description: Maximum rows, integer; default 100. Overflow is marked truncated.
+        execution:
+          type: mysql_sql
+          sql: |-
+            SELECT SCHEMA_NAME AS schemaName, DEFAULT_CHARACTER_SET_NAME AS characterSet,
+                  DEFAULT_COLLATION_NAME AS collationName FROM information_schema.SCHEMATA WHERE SCHEMA_NAME NOT IN ('mysql','sys','information_schema','performance_schema')
+          orderBy: SCHEMA_NAME
+          filters:
+            - input: namePrefix
+              sql: LEFT(SCHEMA_NAME, CHAR_LENGTH(?)) = ?
+              bindings:
+                - namePrefix
+                - namePrefix
+          defaults:
+            limit: 100
+          requires: {}
+          environmentPrefix:
+            dev: AMDC_DEV_MYSQL_
+            prod: AMDC_PROD_MYSQL_
+      - name: mysql_get_processlist
+        description: Read current MySQL foreground connections, default schema, command, state, state duration and SQL text (up to 4096 characters). Idle connections are excluded by default.
+        access:
+          level: 0
+          readOnly: true
+        source: mysql
+        allowedEnvironments:
+          - dev
+          - prod
+        timeoutMs: 5000
+        input:
+          type: object
+          additionalProperties: false
+          properties:
+            schema:
+              type: string
+              description: Optional exact connection default schema, not all accessed schemas. Omit for no schema filter.
+              minLength: 1
+              maxLength: 128
+            connectionId:
+              type: string
+              description: Exact MySQL backend connection ID as a decimal string; omission leaves connections unrestricted.
+              minLength: 1
+              maxLength: 20
+              pattern: ^[0-9]{1,20}$
+            includeIdle:
+              type: boolean
+              description: Include sleeping connections; default false.
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 200
+              description: Maximum rows, integer; default 100. Overflow is marked truncated.
+        execution:
+          type: mysql_sql
+          sql: |-
+            SELECT CAST(t.PROCESSLIST_ID AS CHAR) AS connectionId, CAST(t.THREAD_ID AS CHAR) AS threadId,
+                  t.PROCESSLIST_USER AS mysqlUser, t.PROCESSLIST_HOST AS host,
+                  t.PROCESSLIST_DB AS defaultSchema, t.PROCESSLIST_COMMAND AS command,
+                  t.PROCESSLIST_STATE AS state, t.PROCESSLIST_TIME AS stateDurationSeconds,
+                  LEFT(t.PROCESSLIST_INFO, 4096) AS currentStatement,
+                  COALESCE(CHAR_LENGTH(t.PROCESSLIST_INFO) > 4096, 0) AS statementTruncated
+                  FROM performance_schema.threads t WHERE t.TYPE = 'FOREGROUND' AND t.PROCESSLIST_ID <> CONNECTION_ID()
+          orderBy: t.PROCESSLIST_TIME DESC, t.PROCESSLIST_ID
+          filters:
+            - input: schema
+              sql: t.PROCESSLIST_DB = ?
+              bindings:
+                - schema
+            - input: connectionId
+              sql: t.PROCESSLIST_ID = ?
+              bindings:
+                - connectionId
+            - input: includeIdle
+              sql: t.PROCESSLIST_COMMAND <> 'Sleep'
+              bindings: []
+              when: false
+          defaults:
+            limit: 100
+            includeIdle: false
+          requires: {}
+          environmentPrefix:
+            dev: AMDC_DEV_MYSQL_
+            prod: AMDC_PROD_MYSQL_
+      - name: mysql_get_transactions
+        description: Read active InnoDB transactions, connection IDs, start times, lock and modification counts and current SQL text (up to 4096 characters).
+        access:
+          level: 0
+          readOnly: true
+        source: mysql
+        allowedEnvironments:
+          - dev
+          - prod
+        timeoutMs: 5000
+        input:
+          type: object
+          additionalProperties: false
+          properties:
+            connectionId:
+              type: string
+              description: Exact MySQL backend connection ID as a decimal string; omission leaves connections unrestricted.
+              minLength: 1
+              maxLength: 20
+              pattern: ^[0-9]{1,20}$
+            transactionId:
+              type: string
+              description: Exact InnoDB transaction ID as a decimal string; omission leaves transactions unrestricted.
+              minLength: 1
+              maxLength: 20
+              pattern: ^[0-9]{1,20}$
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 200
+              description: Maximum rows, integer; default 100. Overflow is marked truncated.
+        execution:
+          type: mysql_sql
+          sql: |-
+            SELECT CAST(x.TRX_ID AS CHAR) AS transactionId, CAST(x.TRX_MYSQL_THREAD_ID AS CHAR) AS connectionId,
+                  t.PROCESSLIST_USER AS mysqlUser, t.PROCESSLIST_DB AS defaultSchema,
+                  x.TRX_STATE AS state, x.TRX_STARTED AS startedAt, x.TRX_WAIT_STARTED AS waitStartedAt,
+                  x.TRX_ROWS_LOCKED AS rowsLocked, x.TRX_ROWS_MODIFIED AS rowsModified,
+                  x.TRX_ISOLATION_LEVEL AS isolationLevel, LEFT(x.TRX_QUERY, 4096) AS currentStatement,
+                  COALESCE(CHAR_LENGTH(x.TRX_QUERY) > 4096, 0) AS statementTruncated
+                  FROM information_schema.INNODB_TRX x LEFT JOIN performance_schema.threads t
+                  ON t.PROCESSLIST_ID = x.TRX_MYSQL_THREAD_ID WHERE x.TRX_MYSQL_THREAD_ID <> CONNECTION_ID()
+          orderBy: x.TRX_STARTED, x.TRX_ID
+          filters:
+            - input: connectionId
+              sql: x.TRX_MYSQL_THREAD_ID = ?
+              bindings:
+                - connectionId
+            - input: transactionId
+              sql: x.TRX_ID = ?
+              bindings:
+                - transactionId
+          defaults:
+            limit: 100
+          requires: {}
+          environmentPrefix:
+            dev: AMDC_DEV_MYSQL_
+            prod: AMDC_PROD_MYSQL_
+      - name: mysql_get_all_lock_waits
+        description: Read current InnoDB data-lock waiting and blocking connection/transaction pairs across all schemas and users without filters. Returns up to 100 wait edges with a truncation flag. Does not include metadata lock waits. Takes no arguments.
+        access:
+          level: 0
+          readOnly: true
+        source: mysql
+        allowedEnvironments:
+          - dev
+          - prod
+        timeoutMs: 5000
+        input:
+          type: object
+          additionalProperties: false
+          properties: {}
+        execution:
+          type: mysql_sql
+          sql: |-
+            SELECT CAST(w.REQUESTING_ENGINE_TRANSACTION_ID AS CHAR) AS waitingTransactionId,
+                  CAST(r.PROCESSLIST_ID AS CHAR) AS waitingConnectionId,
+                  CAST(w.BLOCKING_ENGINE_TRANSACTION_ID AS CHAR) AS blockingTransactionId,
+                  CAST(b.PROCESSLIST_ID AS CHAR) AS blockingConnectionId,
+                  requested.OBJECT_SCHEMA AS objectSchema, requested.OBJECT_NAME AS objectName,
+                  requested.INDEX_NAME AS indexName, requested.LOCK_MODE AS requestedLockMode,
+                  held.LOCK_MODE AS blockingLockMode
+                  FROM performance_schema.data_lock_waits w
+                  JOIN performance_schema.data_locks requested ON requested.ENGINE = w.ENGINE
+                    AND requested.ENGINE_LOCK_ID = w.REQUESTING_ENGINE_LOCK_ID
+                  JOIN performance_schema.data_locks held ON held.ENGINE = w.ENGINE
+                    AND held.ENGINE_LOCK_ID = w.BLOCKING_ENGINE_LOCK_ID
+                  LEFT JOIN performance_schema.threads r ON r.THREAD_ID = w.REQUESTING_THREAD_ID
+                  LEFT JOIN performance_schema.threads b ON b.THREAD_ID = w.BLOCKING_THREAD_ID
+          orderBy: w.REQUESTING_ENGINE_LOCK_ID, w.BLOCKING_ENGINE_LOCK_ID
+          filters: []
+          defaults:
+            limit: 100
+          requires: {}
+          environmentPrefix:
+            dev: AMDC_DEV_MYSQL_
+            prod: AMDC_PROD_MYSQL_
+      - name: mysql_get_lock_waits
+        description: Read InnoDB data-lock waiting and blocking connection/transaction pairs and locked objects. Does not include metadata lock waits.
+        access:
+          level: 0
+          readOnly: true
+        source: mysql
+        allowedEnvironments:
+          - dev
+          - prod
+        timeoutMs: 5000
+        input:
+          type: object
+          additionalProperties: false
+          properties:
+            schema:
+              type: string
+              description: Optional exact locked object schema. Omit for no schema filter.
+              minLength: 1
+              maxLength: 128
+            table:
+              type: string
+              description: Exact locked table name within schema; requires schema.
+              minLength: 1
+              maxLength: 128
+            connectionId:
+              type: string
+              description: Exact MySQL backend connection ID on either side of the wait; omission leaves connections unrestricted.
+              minLength: 1
+              maxLength: 20
+              pattern: ^[0-9]{1,20}$
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 200
+              description: Maximum rows, integer; default 100. Overflow is marked truncated.
+        execution:
+          type: mysql_sql
+          sql: |-
+            SELECT CAST(w.REQUESTING_ENGINE_TRANSACTION_ID AS CHAR) AS waitingTransactionId,
+                  CAST(r.PROCESSLIST_ID AS CHAR) AS waitingConnectionId,
+                  CAST(w.BLOCKING_ENGINE_TRANSACTION_ID AS CHAR) AS blockingTransactionId,
+                  CAST(b.PROCESSLIST_ID AS CHAR) AS blockingConnectionId,
+                  requested.OBJECT_SCHEMA AS objectSchema, requested.OBJECT_NAME AS objectName,
+                  requested.INDEX_NAME AS indexName, requested.LOCK_MODE AS requestedLockMode,
+                  held.LOCK_MODE AS blockingLockMode
+                  FROM performance_schema.data_lock_waits w
+                  JOIN performance_schema.data_locks requested ON requested.ENGINE = w.ENGINE
+                    AND requested.ENGINE_LOCK_ID = w.REQUESTING_ENGINE_LOCK_ID
+                  JOIN performance_schema.data_locks held ON held.ENGINE = w.ENGINE
+                    AND held.ENGINE_LOCK_ID = w.BLOCKING_ENGINE_LOCK_ID
+                  LEFT JOIN performance_schema.threads r ON r.THREAD_ID = w.REQUESTING_THREAD_ID
+                  LEFT JOIN performance_schema.threads b ON b.THREAD_ID = w.BLOCKING_THREAD_ID
+          orderBy: w.REQUESTING_ENGINE_LOCK_ID, w.BLOCKING_ENGINE_LOCK_ID
+          filters:
+            - input: schema
+              sql: requested.OBJECT_SCHEMA = ?
+              bindings:
+                - schema
+            - input: table
+              sql: requested.OBJECT_NAME = ?
+              bindings:
+                - table
+            - input: connectionId
+              sql: (r.PROCESSLIST_ID = ? OR b.PROCESSLIST_ID = ?)
+              bindings:
+                - connectionId
+                - connectionId
+          defaults:
+            limit: 100
+          requires:
+            table: schema
+          environmentPrefix:
+            dev: AMDC_DEV_MYSQL_
+            prod: AMDC_PROD_MYSQL_
+      - name: mysql_get_service_status
+        description: Read the MySQL availability value, version information, and uptime from Prometheus.
+        access:
+          level: 0
+          readOnly: true
+        source: prometheus
+        allowedEnvironments:
+          - dev
+          - prod
+        timeoutMs: 5000
+        input:
+          type: object
+          additionalProperties: false
+          properties: {}
+        execution:
+          type: prometheus_http
+          baseUrlEnvironment:
+            dev: AMDC_DEV_PROMETHEUS_URL
+            prod: AMDC_PROD_PROMETHEUS_URL
+          path: /api/v1/query
+          query:
+            query: '{__name__=~"mysql_up|mysql_version_info|mysql_global_status_uptime"}'
+      - name: mysql_get_connections
+        description: Read current, running, cumulative, failed, maximum-used, and configured-maximum MySQL connection metrics from Prometheus.
+        access:
+          level: 0
+          readOnly: true
+        source: prometheus
+        allowedEnvironments:
+          - dev
+          - prod
+        timeoutMs: 5000
+        input:
+          type: object
+          additionalProperties: false
+          properties: {}
+        execution:
+          type: prometheus_http
+          baseUrlEnvironment:
+            dev: AMDC_DEV_PROMETHEUS_URL
+            prod: AMDC_PROD_PROMETHEUS_URL
+          path: /api/v1/query
+          query:
+            query: '{__name__=~"mysql_global_status_threads_connected|mysql_global_status_threads_running|mysql_global_status_connections|mysql_global_status_aborted_clients|mysql_global_status_aborted_connects|mysql_global_status_max_used_connections|mysql_global_variables_max_connections"}'
+      - name: mysql_get_query_activity
+        description: Read raw MySQL slow-query counts and AMDB per-user query duration metrics from Prometheus.
+        access:
+          level: 0
+          readOnly: true
+        source: prometheus
+        allowedEnvironments:
+          - dev
+          - prod
+        timeoutMs: 5000
+        input:
+          type: object
+          additionalProperties: false
+          properties: {}
+        execution:
+          type: prometheus_http
+          baseUrlEnvironment:
+            dev: AMDC_DEV_PROMETHEUS_URL
+            prod: AMDC_PROD_PROMETHEUS_URL
+          path: /api/v1/query
+          query:
+            query: '{__name__=~"mysql_global_status_slow_queries|amdb_user_slow_queries|amdb_user_queries_total|amdb_user_avg_query_time_us|amdb_user_max_query_time_us|amdb_user_total_query_time_us"}'
       - name: db_list_databases
         description: Read AMDB metadata for all databases, owners, status, quota, connection limits, and query digest logging flags.
         access:
           level: 0
           readOnly: true
         source: amdb_admin_api
-        allowedEnvironments: [dev, prod]
+        allowedEnvironments:
+          - dev
+          - prod
         timeoutMs: 5000
         input:
           type: object
@@ -359,7 +455,9 @@ plugins:
           level: 0
           readOnly: true
         source: amdb_admin_api
-        allowedEnvironments: [dev, prod]
+        allowedEnvironments:
+          - dev
+          - prod
         timeoutMs: 5000
         input:
           type: object
@@ -369,7 +467,8 @@ plugins:
               type: string
               minLength: 1
               maxLength: 128
-          required: [databaseId]
+          required:
+            - databaseId
         execution:
           type: source_adapter
           operation: db_get_database_detail
@@ -379,7 +478,9 @@ plugins:
           level: 0
           readOnly: true
         source: amdb_admin_api
-        allowedEnvironments: [dev, prod]
+        allowedEnvironments:
+          - dev
+          - prod
         timeoutMs: 5000
         input:
           type: object
@@ -389,91 +490,8 @@ plugins:
           type: source_adapter
           operation: db_list_users
 
-  - name: backup
-    description: Backup and restore state inspection tools.
-    domainHints:
-      - backup
-      - restore
-      - snapshot
-      - replica
-      - garage
-      - 백업
-      - 복구
-      - 스냅샷
-    tools:
-      - name: backup_get_overview
-        description: Read backup coverage summary, per-database backup state, and backup user hotspots.
-        access:
-          level: 0
-          readOnly: true
-        source: amdb_admin_api
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties: {}
-        execution:
-          type: source_adapter
-          operation: backup_get_overview
-      - name: backup_list_jobs
-        description: Read backup job list and status, optionally filtered by database id.
-        access:
-          level: 0
-          readOnly: true
-        source: amdb_admin_api
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            databaseId:
-              type: string
-              minLength: 1
-              maxLength: 128
-          required: []
-        execution:
-          type: source_adapter
-          operation: backup_list_jobs
-      - name: backup_get_schedule
-        description: Read configured backup schedule state.
-        access:
-          level: 0
-          readOnly: true
-        source: amdb_admin_api
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties: {}
-        execution:
-          type: source_adapter
-          operation: backup_get_schedule
-      - name: backup_list_restore_jobs
-        description: Read restore job list and status, optionally filtered by database id.
-        access:
-          level: 0
-          readOnly: true
-        source: amdb_admin_api
-        allowedEnvironments: [dev, prod]
-        timeoutMs: 5000
-        input:
-          type: object
-          additionalProperties: false
-          properties:
-            databaseId:
-              type: string
-              minLength: 1
-              maxLength: 128
-          required: []
-        execution:
-          type: source_adapter
-          operation: backup_list_restore_jobs
-
   - name: backend
-    description: AMDB Backend API and dependency status tools.
+    description: Tools that read AMDB FastAPI Backend health and source data.
     domainHints:
       - backend
       - api
@@ -484,8 +502,8 @@ plugins:
       - 접속
       - 백엔드
     tools:
-      - name: backend_check_api_health
-        description: Check AMDB Backend API health and dependency status using its read-only health endpoint.
+      - name: backend_get_health
+        description: Read the server-configured AMDB Backend health endpoint and return its HTTP status, content type, and response body.
         access:
           level: 0
           readOnly: true
@@ -497,5 +515,10 @@ plugins:
           additionalProperties: false
           properties: {}
         execution:
-          type: source_adapter
-          operation: backend_check_api_health
+          type: local_shell
+          command: |
+            curl --silent --show-error --include --request GET {{ env.backend_health_url }}
+          environment:
+            backend_health_url:
+              dev: AMDC_DEV_HEALTHCHECK_URL
+              prod: AMDC_PROD_HEALTHCHECK_URL

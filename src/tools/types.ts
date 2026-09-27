@@ -1,6 +1,22 @@
 import type { AmdcEnvironment } from "../config/env.js";
 
-export type PluginName = "backend" | "backup" | "db" | "logs" | "metrics" | "proxy" | "system";
+export const PLUGIN_NAMES = [
+  "amdb-tenant",
+  "backend",
+  "backup",
+  "host",
+  "logs",
+  "mysql",
+  "prometheus",
+  "proxy",
+  "system"
+] as const;
+
+export type PluginName = (typeof PLUGIN_NAMES)[number];
+
+export function isPluginName(value: string): value is PluginName {
+  return (PLUGIN_NAMES as readonly string[]).includes(value);
+}
 
 export type ToolSource =
   | "amdb_admin_api"
@@ -37,7 +53,7 @@ export interface JsonObjectSchema {
 
 export type JsonSchemaProperty =
   | {
-      readonly type: "number";
+      readonly type: "number" | "integer";
       readonly enum?: readonly number[];
       readonly minimum?: number;
       readonly maximum?: number;
@@ -48,6 +64,7 @@ export type JsonSchemaProperty =
       readonly enum?: readonly string[];
       readonly minLength?: number;
       readonly maxLength?: number;
+      readonly pattern?: string;
       readonly description?: string;
     }
   | {
@@ -75,7 +92,7 @@ export interface ToolDefinition {
   readonly allowedEnvironments: readonly AmdcEnvironment[];
   readonly timeoutMs: number;
   readonly inputSchema: JsonObjectSchema;
-  readonly execution: SourceAdapterToolExecution;
+  readonly execution: ToolExecution;
 }
 
 export interface ToolAccessPolicy {
@@ -86,6 +103,37 @@ export interface ToolAccessPolicy {
 export interface SourceAdapterToolExecution {
   readonly type: "source_adapter";
   readonly operation: string;
+}
+
+export interface LocalShellToolExecution {
+  readonly type: "local_shell";
+  readonly command: string;
+  readonly environment: Readonly<
+    Record<string, Readonly<Record<AmdcEnvironment, string>>>
+  >;
+}
+
+export interface PrometheusHttpToolExecution {
+  readonly type: "prometheus_http";
+  readonly baseUrlEnvironment: Readonly<Record<AmdcEnvironment, string>>;
+  readonly path: string;
+  readonly query: Readonly<Record<string, string>>;
+}
+
+export type ToolExecution =
+  | MysqlSqlExecution
+  | SourceAdapterToolExecution
+  | LocalShellToolExecution
+  | PrometheusHttpToolExecution;
+
+export interface MysqlSqlExecution {
+  readonly type: "mysql_sql";
+  readonly sql: string;
+  readonly orderBy: string;
+  readonly filters: readonly { readonly input: string; readonly sql: string; readonly bindings: readonly string[]; readonly when?: boolean }[];
+  readonly defaults: Readonly<Record<string, string | number | boolean>>;
+  readonly requires: Readonly<Record<string, string>>;
+  readonly environmentPrefix: Readonly<Record<AmdcEnvironment, string>>;
 }
 
 export interface ToolExecutionRequest {
@@ -101,6 +149,7 @@ export interface ToolRuntimeContext {
 
 export type ToolRuntimeResult =
   | { readonly ok: true; readonly observation: ToolObservation }
+  | { readonly ok: true; readonly rawResult: RawToolResult }
   | { readonly ok: false; readonly error: SanitizedToolError };
 
 export interface ToolObservation {
@@ -119,6 +168,42 @@ export interface ToolObservationFact {
   readonly unit?: string;
 }
 
+interface RawToolResultBase {
+  readonly toolName: string;
+  readonly pluginName: PluginName;
+  readonly source: ToolSource;
+  readonly collectedAt: string;
+}
+
+export interface RawLocalShellToolResult extends RawToolResultBase {
+  readonly transport: "local_shell";
+  readonly execution: {
+    readonly stdout: string;
+    readonly stderr: string;
+    readonly exitCode: number;
+  };
+}
+
+export interface RawHttpToolResult extends RawToolResultBase {
+  readonly transport: "http";
+  readonly response: {
+    readonly statusCode: number;
+    readonly contentType: string | null;
+    readonly body: string;
+  };
+}
+
+export interface RawMysqlToolResult extends RawToolResultBase {
+  readonly transport: "mysql";
+  readonly appliedFilters: Readonly<Record<string, unknown>>;
+  readonly limit: number;
+  readonly rows: readonly Record<string, unknown>[];
+  readonly returnedRows: number;
+  readonly truncated: boolean;
+}
+
+export type RawToolResult = RawLocalShellToolResult | RawHttpToolResult | RawMysqlToolResult;
+
 export interface SanitizedToolError {
   readonly toolName: string;
   readonly pluginName: PluginName | null;
@@ -127,8 +212,12 @@ export interface SanitizedToolError {
     | "invalid_input"
     | "environment_not_allowed"
     | "tool_timeout"
+    | "tool_output_too_large"
+    | "malformed_source_response"
     | "source_request_failed"
-    | "source_unavailable";
+    | "source_permission_denied"
+    | "source_unavailable"
+    | "secret_exposure_risk";
   readonly message: string;
   readonly occurredAt: string;
 }

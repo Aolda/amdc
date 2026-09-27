@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 import type { AmdcEnvironment } from "../config/env.js";
+import { PLUGIN_NAMES } from "./types.js";
 import type {
   JsonObjectSchema,
   PluginName,
@@ -10,15 +11,7 @@ import type {
   ToolSource
 } from "./types.js";
 
-const allowedPluginNames = new Set([
-  "backend",
-  "backup",
-  "db",
-  "logs",
-  "metrics",
-  "proxy",
-  "system"
-]);
+const allowedPluginNames = new Set<string>(PLUGIN_NAMES);
 const allowedSources = new Set([
   "amdb_admin_api",
   "amdb_backend",
@@ -30,7 +23,14 @@ const allowedSources = new Set([
   "proxysql"
 ]);
 const allowedEnvironments = new Set(["dev", "prod"]);
-const allowedExecutionTypes = new Set(["source_adapter"]);
+const allowedExecutionTypes = new Set([
+  "source_adapter",
+  "mysql_sql",
+  "local_shell",
+  "prometheus_http"
+]);
+const environmentVariableNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const templateVariableNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 export function loadToolCatalogFromYaml(path: string): ToolCatalog {
   const parsed = parse(readFileSync(path, "utf8")) as unknown;
@@ -89,7 +89,26 @@ function parseTool(pluginName: PluginName, value: unknown): ToolDefinition {
   );
   const timeoutMs = parsePositiveInteger(raw.timeoutMs, `${name}.timeoutMs`);
   const inputSchema = parseInputSchema(raw.input, `${name}.input`);
-  const execution = parseExecution(raw.execution, `${name}.execution`);
+  const execution = parseExecution(
+    raw.execution,
+    `${name}.execution`,
+    allowedEnvironmentValues
+  );
+
+  if (execution.type === "mysql_sql") {
+    const properties = inputSchema.properties ?? {};
+    for (const filter of execution.filters) {
+      if (!(filter.input in properties) || filter.bindings.some(key => !(key in properties))) throw new Error(`${name}: undeclared SQL input.`);
+      if (filter.when !== undefined && properties[filter.input].type !== "boolean") throw new Error(`${name}: option type mismatch.`);
+    }
+    for (const [key, dependency] of Object.entries(execution.requires)) {
+      if (!(key in properties) || !(dependency in properties)) throw new Error(`${name}: undeclared dependency.`);
+    }
+    for (const key of Object.keys(execution.defaults)) if (key !== "limit" && !(key in properties)) throw new Error(`${name}: undeclared default.`);
+    const limit = execution.defaults.limit;
+    if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 200) throw new Error(`${name}: invalid default limit.`);
+    if (execution.sql.includes("?") || execution.orderBy.includes("?")) throw new Error(`${name}: bindings belong in filters.`);
+  }
 
   return {
     name,
@@ -106,15 +125,164 @@ function parseTool(pluginName: PluginName, value: unknown): ToolDefinition {
 
 function parseExecution(
   value: unknown,
-  path: string
+  path: string,
+  toolEnvironments: readonly AmdcEnvironment[]
 ): ToolDefinition["execution"] {
   const raw = asRecord(value, path);
   const type = parseEnum(raw.type, allowedExecutionTypes, `${path}.type`);
 
+  if (type === "mysql_sql") {
+    const sql = parseNonEmptyString(raw.sql, `${path}.sql`);
+    const orderBy = parseNonEmptyString(raw.orderBy, `${path}.orderBy`);
+    const safeFragment = (s: string) => { if (/[;#]|--|\/\*|\{\{|\}\}/.test(s)) throw new Error(`${path}: SQL must be fixed single-statement text.`); return s; };
+    if (!/^SELECT\s/i.test(sql) || /\b(INTO|OUTFILE|DUMPFILE|FOR UPDATE)\b/i.test(sql)) throw new Error(`${path}: read-only SELECT required.`);
+    safeFragment(sql); safeFragment(orderBy);
+    const filters = asArray(raw.filters, `${path}.filters`).map(value => {
+      const f = asRecord(value, path);
+      const input = parseNonEmptyString(f.input, path);
+      const statement = safeFragment(parseNonEmptyString(f.sql, path));
+      const bindings = asArray(f.bindings, path).map(v => parseNonEmptyString(v, path));
+      if ((statement.match(/\?/g) ?? []).length !== bindings.length) throw new Error(`${path}: placeholder count mismatch.`);
+      if (f.when !== undefined && typeof f.when !== "boolean") throw new Error(`${path}: boolean option required.`);
+      return { input, sql: statement, bindings, ...(f.when === undefined ? {} : { when: f.when as boolean }) };
+    });
+    const defaults = asRecord(raw.defaults, path);
+    if (Object.values(defaults).some(v => !["string", "number", "boolean"].includes(typeof v))) throw new Error(`${path}: invalid default.`);
+    const requires = asRecord(raw.requires, path);
+    if (Object.values(requires).some(v => typeof v !== "string")) throw new Error(`${path}: invalid dependency.`);
+    return { type, sql, orderBy, filters, defaults: defaults as Record<string, string | number | boolean>, requires: requires as Record<string, string>, environmentPrefix: parseEnvironmentSourceMap(raw.environmentPrefix, path, toolEnvironments) };
+  }
+
+  if (type === "source_adapter") {
+    return {
+      type,
+      operation: parseNonEmptyString(raw.operation, `${path}.operation`)
+    };
+  }
+
+  if (type === "prometheus_http") {
+    const baseUrlEnvironment = parseEnvironmentSourceMap(
+      raw.baseUrlEnvironment,
+      `${path}.baseUrlEnvironment`,
+      toolEnvironments
+    );
+    const requestPath = parseNonEmptyString(raw.path, `${path}.path`);
+
+    if (
+      !requestPath.startsWith("/api/v1/") ||
+      requestPath.includes("://") ||
+      requestPath.includes("?") ||
+      requestPath.includes("#") ||
+      requestPath.includes("{{") ||
+      requestPath.includes("}}")
+    ) {
+      throw new Error(`${path}.path must be a fixed Prometheus /api/v1/ path.`);
+    }
+
+    const rawQuery = asRecord(raw.query, `${path}.query`);
+    const query: Record<string, string> = {};
+
+    for (const [name, rawValue] of Object.entries(rawQuery)) {
+      if (!templateVariableNamePattern.test(name)) {
+        throw new Error(`${path}.query contains an invalid parameter name.`);
+      }
+
+      const value = parseNonEmptyString(rawValue, `${path}.query.${name}`);
+      if (value.includes("{{") || value.includes("}}")) {
+        throw new Error(`${path}.query values must be fixed strings.`);
+      }
+      query[name] = value;
+    }
+
+    return {
+      type,
+      baseUrlEnvironment,
+      path: requestPath,
+      query
+    };
+  }
+
+  const command = parseNonEmptyString(raw.command, `${path}.command`);
+  const rawEnvironment = asRecord(raw.environment, `${path}.environment`);
+  const environment: Record<string, Record<AmdcEnvironment, string>> = {};
+
+  for (const [logicalName, rawSources] of Object.entries(rawEnvironment)) {
+    if (!templateVariableNamePattern.test(logicalName)) {
+      throw new Error(`${path}.environment contains an invalid template variable name.`);
+    }
+
+    const sources = asRecord(rawSources, `${path}.environment.${logicalName}`);
+    const parsedSources = {} as Record<AmdcEnvironment, string>;
+
+    for (const toolEnvironment of toolEnvironments) {
+      const sourceName = parseNonEmptyString(
+        sources[toolEnvironment],
+        `${path}.environment.${logicalName}.${toolEnvironment}`
+      );
+
+      if (!environmentVariableNamePattern.test(sourceName)) {
+        throw new Error(
+          `${path}.environment.${logicalName}.${toolEnvironment} must name a server environment variable.`
+        );
+      }
+
+      parsedSources[toolEnvironment] = sourceName;
+    }
+
+    environment[logicalName] = parsedSources;
+  }
+
+  validateLocalShellTemplate(command, environment, path);
+
   return {
-    type: type as "source_adapter",
-    operation: parseNonEmptyString(raw.operation, `${path}.operation`)
+    type: "local_shell",
+    command,
+    environment
   };
+}
+
+function parseEnvironmentSourceMap(
+  value: unknown,
+  path: string,
+  toolEnvironments: readonly AmdcEnvironment[]
+): Record<AmdcEnvironment, string> {
+  const rawSources = asRecord(value, path);
+  const parsedSources = {} as Record<AmdcEnvironment, string>;
+
+  for (const toolEnvironment of toolEnvironments) {
+    const sourceName = parseNonEmptyString(
+      rawSources[toolEnvironment],
+      `${path}.${toolEnvironment}`
+    );
+
+    if (!environmentVariableNamePattern.test(sourceName)) {
+      throw new Error(`${path}.${toolEnvironment} must name a server environment variable.`);
+    }
+
+    parsedSources[toolEnvironment] = sourceName;
+  }
+
+  return parsedSources;
+}
+
+function validateLocalShellTemplate(
+  command: string,
+  environment: Readonly<Record<string, unknown>>,
+  path: string
+): void {
+  const referencePattern = /{{\s*env\.([A-Za-z_][A-Za-z0-9_]*)\s*}}/g;
+  const references = [...command.matchAll(referencePattern)].map((match) => match[1]);
+  const unparsedTemplate = command.replace(referencePattern, "");
+
+  if (unparsedTemplate.includes("{{") || unparsedTemplate.includes("}}")) {
+    throw new Error(`${path}.command may reference only declared env.* variables.`);
+  }
+
+  for (const reference of references) {
+    if (!(reference in environment)) {
+      throw new Error(`${path}.command references an undeclared environment value.`);
+    }
+  }
 }
 
 function parseAccess(value: unknown, path: string): ToolDefinition["access"] {
