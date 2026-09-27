@@ -16,9 +16,31 @@ const connect: MysqlConnect = async (options) => {
   };
 };
 
+// ProxySQL Admin speaks the MySQL text protocol but does not support server-side
+// prepared statements. Its SQL engine uses SQLite string literals, not MySQL escaping.
+export function bindProxySql(sql: string, values: (string | number)[]): string {
+  let index = 0;
+  const result = sql.replace(/\?/g, () => {
+    const value = values[index++];
+    if (typeof value === "number" && Number.isSafeInteger(value)) return String(value);
+    if (typeof value !== "string" || /[\x00-\x1f\x7f]/.test(value)) throw new Error("invalid_input");
+    return "'" + value.replace(/'/g, "''") + "'";
+  });
+  if (index !== values.length) throw new Error("invalid_input");
+  return result;
+}
+
+const connectProxy: MysqlConnect = async options => {
+  const connection = await createConnection(options);
+  return {
+    execute: async (sql, values) => (await connection.query<RowDataPacket[]>(bindProxySql(sql, values)))[0],
+    destroy: () => connection.destroy()
+  };
+};
+
 // SQL and optional predicates are trusted catalog definitions; values are bound separately.
 export function buildMysqlQuery(tool: ToolDefinition, args: Record<string, unknown>) {
-  if (tool.execution.type !== "mysql_sql") throw new Error("invalid_execution");
+  if (tool.execution.type !== "mysql_sql" && tool.execution.type !== "proxysql_sql") throw new Error("invalid_execution");
   const execution = tool.execution;
   const properties = tool.inputSchema.properties ?? {};
   if (Object.keys(args).some(k => !(k in properties))) throw new Error("invalid_input");
@@ -51,13 +73,14 @@ export function buildMysqlQuery(tool: ToolDefinition, args: Record<string, unkno
 }
 
 export async function executeMysqlTool(tool: ToolDefinition, args: Record<string, unknown>, context: ToolRuntimeContext,
-  connector: MysqlConnect = connect, environment: NodeJS.ProcessEnv = process.env): Promise<ToolRuntimeResult> {
+  connector?: MysqlConnect, environment: NodeJS.ProcessEnv = process.env): Promise<ToolRuntimeResult> {
   const failure = (code: SanitizedToolError["code"]): ToolRuntimeResult => ({ ok: false, error: {
     toolName: tool.name, pluginName: tool.pluginName, code,
-    message: `MySQL read failed: ${code}.`, occurredAt: new Date().toISOString()
+    message: `SQL read failed: ${code}.`, occurredAt: new Date().toISOString()
   } });
-  if (tool.execution.type !== "mysql_sql") return failure("source_unavailable");
+  if (tool.execution.type !== "mysql_sql" && tool.execution.type !== "proxysql_sql") return failure("source_unavailable");
   const execution = tool.execution;
+  const proxy = execution.type === "proxysql_sql";
   let query;
   try { query = buildMysqlQuery(tool, args); } catch { return failure("invalid_input"); }
   const prefix = tool.execution.environmentPrefix[context.environment];
@@ -77,18 +100,18 @@ export async function executeMysqlTool(tool: ToolDefinition, args: Record<string
   context.signal?.addEventListener("abort", abort, { once: true });
   try {
     const work = async () => {
-      reader = await connector({ host, user, password, port, connectTimeout: tool.timeoutMs,
+      reader = await (connector ?? (proxy ? connectProxy : connect))({ host, user, password, port, connectTimeout: tool.timeoutMs,
         supportBigNumbers: true, bigNumberStrings: true, dateStrings: true, multipleStatements: false,
         ...(ca ? { ssl: { ca, rejectUnauthorized: true } } : {}) });
       if (expired) { reader.destroy(); throw new Error("tool_timeout"); }
-      const sql = query.sql.replace(/^SELECT /, `SELECT /*+ MAX_EXECUTION_TIME(${Math.max(1, Math.floor(tool.timeoutMs))}) */ `);
+      const sql = proxy ? query.sql : query.sql.replace(/^SELECT /, `SELECT /*+ MAX_EXECUTION_TIME(${Math.max(1, Math.floor(tool.timeoutMs))}) */ `);
       const rows = await reader.execute(sql, query.values);
       const selected = rows.slice(0, query.limit);
       const body = JSON.stringify(selected);
       if (Buffer.byteLength(body) > MAX_BYTES) return failure("tool_output_too_large");
       const secrets = Object.entries(environment).filter(([k,v]) => /TOKEN|PASSWORD|SECRET|API_KEY|PRIVATE_KEY|SESSION/i.test(k) && v && v.length >= 8).map(([,v]) => v!);
       if (secrets.some(s => body.includes(s)) || /-----BEGIN [A-Z ]*PRIVATE KEY-----|\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/i.test(body)) return failure("secret_exposure_risk");
-      return { ok: true, rawResult: { toolName: tool.name, pluginName: tool.pluginName, source: "mysql",
+      return { ok: true, rawResult: { toolName: tool.name, pluginName: tool.pluginName, source: tool.source,
         transport: "mysql", collectedAt: new Date().toISOString(), rows: selected,
         appliedFilters: Object.fromEntries(Object.entries({ ...args,
           ...Object.fromEntries(Object.entries(execution.defaults).filter(([key]) => key !== "limit" && args[key] === undefined))

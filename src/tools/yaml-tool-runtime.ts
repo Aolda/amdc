@@ -61,14 +61,14 @@ export class YamlToolRuntime implements ToolRuntime {
     }
 
     if (tool.execution.type === "prometheus_http") {
-      return executePrometheusHttpTool(tool, context, occurredAt);
+      return executePrometheusHttpTool(tool, context, occurredAt, undefined, request.args as Record<string, unknown>);
     }
 
-    if (tool.execution.type === "mysql_sql") {
+    if (tool.execution.type === "mysql_sql" || tool.execution.type === "proxysql_sql") {
       return executeMysqlTool(tool, request.args as Record<string, unknown>, context);
     }
 
-    if (tool.execution.operation === "system_check_configured_http_health") {
+    if (tool.execution.type === "source_adapter" && tool.execution.operation === "system_check_configured_http_health") {
       return executeConfiguredHttpHealth(tool, context, occurredAt);
     }
 
@@ -107,7 +107,7 @@ function buildToolError(
   };
 }
 
-function isValidObjectInput(value: unknown, schema: JsonObjectSchema): boolean {
+export function isValidObjectInput(value: unknown, schema: JsonObjectSchema): boolean {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
   }

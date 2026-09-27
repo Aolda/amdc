@@ -26,6 +26,7 @@ const allowedEnvironments = new Set(["dev", "prod"]);
 const allowedExecutionTypes = new Set([
   "source_adapter",
   "mysql_sql",
+  "proxysql_sql",
   "local_shell",
   "prometheus_http"
 ]);
@@ -95,7 +96,18 @@ function parseTool(pluginName: PluginName, value: unknown): ToolDefinition {
     allowedEnvironmentValues
   );
 
-  if (execution.type === "mysql_sql") {
+  if (execution.type === "prometheus_http" && execution.selection) {
+    const properties = inputSchema.properties ?? {};
+    if (properties.metricName?.type !== "string" || !inputSchema.required?.includes("metricName")) throw new Error(`${name}: metricName must be required.`);
+    for (const input of Object.keys(execution.labelInputs ?? {})) {
+      if (execution.selection !== "metadata" && properties[input]?.type !== "string") throw new Error(`${name}: undeclared label input.`);
+    }
+    if (["range", "series"].includes(execution.selection)) {
+      for (const key of ["start", "end"]) if (properties[key]?.type !== "string" || !inputSchema.required?.includes(key)) throw new Error(`${name}: required time input missing.`);
+    }
+  }
+
+  if (execution.type === "mysql_sql" || execution.type === "proxysql_sql") {
     const properties = inputSchema.properties ?? {};
     for (const filter of execution.filters) {
       if (!(filter.input in properties) || filter.bindings.some(key => !(key in properties))) throw new Error(`${name}: undeclared SQL input.`);
@@ -131,12 +143,15 @@ function parseExecution(
   const raw = asRecord(value, path);
   const type = parseEnum(raw.type, allowedExecutionTypes, `${path}.type`);
 
-  if (type === "mysql_sql") {
+  if (type === "mysql_sql" || type === "proxysql_sql") {
     const sql = parseNonEmptyString(raw.sql, `${path}.sql`);
     const orderBy = parseNonEmptyString(raw.orderBy, `${path}.orderBy`);
     const safeFragment = (s: string) => { if (/[;#]|--|\/\*|\{\{|\}\}/.test(s)) throw new Error(`${path}: SQL must be fixed single-statement text.`); return s; };
     if (!/^SELECT\s/i.test(sql) || /\b(INTO|OUTFILE|DUMPFILE|FOR UPDATE)\b/i.test(sql)) throw new Error(`${path}: read-only SELECT required.`);
     safeFragment(sql); safeFragment(orderBy);
+    if (type === "proxysql_sql" && (!/^SELECT\s+[\s\S]+\sFROM stats_mysql_[a-z_]+$/i.test(sql) || /_reset\b|\*/i.test(sql))) {
+      throw new Error(`${path}: ProxySQL requires explicit columns from a non-reset stats table.`);
+    }
     const filters = asArray(raw.filters, `${path}.filters`).map(value => {
       const f = asRecord(value, path);
       const input = parseNonEmptyString(f.input, path);
@@ -194,11 +209,19 @@ function parseExecution(
       query[name] = value;
     }
 
+    const selection = raw.selection === undefined ? undefined : parseEnum(raw.selection, new Set(["metadata", "series", "instant", "range"]), `${path}.selection`) as "metadata" | "series" | "instant" | "range";
+    const expectedPaths = { metadata: "/api/v1/metadata", series: "/api/v1/series", instant: "/api/v1/query", range: "/api/v1/query_range" };
+    if (selection && requestPath !== expectedPaths[selection]) throw new Error(`${path}: selection/path mismatch.`);
+    const labelInputs = raw.labelInputs === undefined ? {} : asRecord(raw.labelInputs, `${path}.labelInputs`);
+    for (const [input, label] of Object.entries(labelInputs)) {
+      if (!templateVariableNamePattern.test(input) || typeof label !== "string" || !templateVariableNamePattern.test(label) || label === "__name__") throw new Error(`${path}: invalid label binding.`);
+    }
     return {
       type,
       baseUrlEnvironment,
       path: requestPath,
-      query
+      query,
+      ...(selection ? { selection, labelInputs: labelInputs as Record<string, string> } : {})
     };
   }
 

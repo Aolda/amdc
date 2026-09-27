@@ -9,59 +9,67 @@ const MYSQL_OPERATIONS = registry.listAllTools().filter(t => registry.getTool(t.
 const buildMysqlQuery = (name: string, args: Record<string, unknown>) => buildQuery(registry.getTool(name)!, args);
 const env = { AMDC_DEV_MYSQL_HOST: "fake", AMDC_DEV_MYSQL_USER: "diagnostic", AMDC_DEV_MYSQL_PASSWORD: "fake-password" };
 const context = { environment: "dev" as const, referenceTime: new Date() };
-const tool = registry.getTool("mysql_get_processlist")!;
+const tool = registry.getTool("mysql_get_all_processlist")!;
 
 test("all direct readers are registered; filter values never enter SQL", () => {
   for (const operation of MYSQL_OPERATIONS) {
     assert.equal(registry.getTool(operation)?.source, "mysql");
-    assert.match(buildMysqlQuery(operation, {}).sql, /^SELECT /);
+    const args = operation.endsWith("by_connection_id") ? { connectionId: "1" }
+      : operation === "mysql_get_transaction_by_transaction_id" ? { transactionId: "1" }
+      : operation.endsWith("by_database") ? { databaseName: "sg" }
+      : operation.endsWith("by_table") ? { databaseName: "sg", tableName: "items" }
+      : {};
+    assert.match(buildMysqlQuery(operation, args).sql, /^SELECT /);
   }
   const name = "sg_' OR 1=1 --";
-  const q = buildMysqlQuery("mysql_get_processlist", { schema: name, connectionId: "18446744073709551615" });
+  const q = buildMysqlQuery("mysql_get_processlist_by_database", { databaseName: name });
   assert.ok(!q.sql.includes(name));
   assert.equal((q.sql.match(/\bWHERE\b/g) ?? []).length, 1);
   assert.match(q.sql, /AND t.PROCESSLIST_DB = \?/);
-  assert.deepEqual(q.values, [name, "18446744073709551615", 101]);
+  assert.deepEqual(q.values, [name, 101]);
   assert.match(q.sql, /COMMAND <> 'Sleep'/);
-  assert.doesNotMatch(buildMysqlQuery("mysql_get_processlist", { includeIdle: true }).sql, /COMMAND <> 'Sleep'/);
+  assert.doesNotMatch(buildMysqlQuery("mysql_get_all_processlist", {}).sql, /COMMAND <> 'Sleep'/);
+  assert.match(buildMysqlQuery("mysql_get_active_processlist", {}).sql, /COMMAND <> 'Sleep'/);
+  assert.throws(() => buildMysqlQuery("mysql_get_all_processlist", { includeIdle: true }));
+  assert.throws(() => buildMysqlQuery("mysql_get_all_processlist", { databaseName: "sg" }));
 });
 test("account remains output-only for processlist and transactions", () => {
-  for (const name of ["mysql_get_processlist", "mysql_get_transactions"]) {
+  for (const name of ["mysql_get_processlist_by_connection_id", "mysql_get_transactions_by_connection_id"]) {
     assert.equal(registry.getTool(name)?.inputSchema.properties?.mysqlUser, undefined);
     assert.throws(() => buildMysqlQuery(name, { mysqlUser: "root" }));
     const query = buildMysqlQuery(name, { connectionId: "2153" });
     assert.match(query.sql, /PROCESSLIST_USER AS mysqlUser/);
     assert.doesNotMatch(query.sql, /PROCESSLIST_USER =/);
-    assert.deepEqual(query.values, ["2153", 101]);
+    assert.deepEqual(query.values, ["2153", name === "mysql_get_processlist_by_connection_id" ? 2 : 101]);
   }
 });
 test("model schema matches ID and integer execution constraints", () => {
-  const schema = jsonObjectSchemaToZod(tool.inputSchema);
-  for (const args of [{ connectionId: "?" }, { connectionId: "1".repeat(21) }, { limit: 1.5 }, { limit: 201 }]) {
+  const byIdTool = registry.getTool("mysql_get_processlist_by_connection_id")!;
+  const schema = jsonObjectSchemaToZod(byIdTool.inputSchema);
+  for (const args of [{}, { connectionId: "?" }, { connectionId: "1".repeat(21) }, { connectionId: "1", limit: 1 }]) {
     assert.equal(schema.safeParse(args).success, false);
-    assert.throws(() => buildMysqlQuery("mysql_get_processlist", args));
+    assert.throws(() => buildMysqlQuery("mysql_get_processlist_by_connection_id", args));
   }
-  assert.equal(schema.safeParse({ connectionId: "2153", limit: 1 }).success, true);
-  assert.equal(schema.safeParse({}).success, true);
+  assert.equal(schema.safeParse({ connectionId: "2153" }).success, true);
+  assert.deepEqual(buildMysqlQuery("mysql_get_processlist_by_connection_id", { connectionId: "2153" }).values, ["2153", 2]);
 });
-test("literal schema prefixes and bidirectional lock filters", () => {
-  assert.deepEqual(buildMysqlQuery("mysql_get_all_lock_waits", {}), buildMysqlQuery("mysql_get_lock_waits", {}));
+test("database, table and connection lock readers bind only their required scope", () => {
   assert.throws(() => buildMysqlQuery("mysql_get_all_lock_waits", { connectionId: "1" }));
-  const q = buildMysqlQuery("mysql_list_schemas", { namePrefix: "sg_%" });
-  assert.doesNotMatch(q.sql, /LIKE/); assert.deepEqual(q.values, ["sg_%", "sg_%", 101]);
-  const locks = buildMysqlQuery("mysql_get_lock_waits", { schema: "sg", table: "items", connectionId: "5" });
-  assert.deepEqual(locks.values, ["sg", "items", "5", "5", 101]);
-  assert.match(locks.sql, /r.PROCESSLIST_ID = \? OR b.PROCESSLIST_ID = \?/);
-  assert.doesNotMatch(locks.sql, /LOCK_DATA/);
+  assert.deepEqual(buildMysqlQuery("mysql_get_lock_waits_by_database", { databaseName: "sg" }).values, ["sg", 101]);
+  assert.deepEqual(buildMysqlQuery("mysql_get_lock_waits_by_table", { databaseName: "sg", tableName: "items" }).values, ["sg", "items", 101]);
+  const byConnection = buildMysqlQuery("mysql_get_lock_waits_by_connection_id", { connectionId: "5" });
+  assert.deepEqual(byConnection.values, ["5", "5", 101]);
+  assert.match(byConnection.sql, /r.PROCESSLIST_ID = \? OR b.PROCESSLIST_ID = \?/);
+  assert.doesNotMatch(byConnection.sql, /LOCK_DATA/);
 });
 test("a catalog-defined tool needs no name-specific SQL dispatch", () => {
-  const original = registry.getTool("mysql_get_lock_waits")!;
+  const original = registry.getTool("mysql_get_lock_waits_by_connection_id")!;
   assert.equal(original.execution.type, "mysql_sql");
   const renamed = { ...original, name: "new_catalog_reader" };
   assert.deepEqual(buildQuery(renamed, { connectionId: "99" }), buildQuery(original, { connectionId: "99" }));
 });
 test("SQL catalog rejects undeclared bindings, multiple statements and malformed defaults", () => {
-  const original = registry.getTool("mysql_get_processlist")!;
+  const original = registry.getTool("mysql_get_all_processlist")!;
   assert.equal(original.execution.type, "mysql_sql");
   if (original.execution.type !== "mysql_sql") return;
   const parse = (execution: unknown) => parseToolCatalog({ plugins: [{ name: "mysql", description: "MySQL reads", domainHints: [], tools: [{ ...original, input: original.inputSchema, execution }] }] });
@@ -73,12 +81,20 @@ test("SQL catalog rejects undeclared bindings, multiple statements and malformed
   ]) assert.throws(() => parse({ ...original.execution, ...change }));
 });
 test("reject unsupported inputs and fractional limits", () => {
-  for (const args of [{ limit: 1.2 }, { limit: NaN }, { limit: 201 }, { connectionId: 12 }, { connectionId: "1 OR 1" }, { sql: "SELECT 1" }]) {
-    assert.throws(() => buildMysqlQuery("mysql_get_processlist", args));
+  for (const args of [{ limit: 1.2 }, { limit: NaN }, { limit: 201 }, { connectionId: "1" }, { sql: "SELECT 1" }]) {
+    assert.throws(() => buildMysqlQuery("mysql_get_all_processlist", args));
   }
-  assert.throws(() => buildMysqlQuery("mysql_get_lock_waits", { table: "x" }));
-  assert.throws(() => buildMysqlQuery("mysql_get_transactions", { schema: "sg" }));
-  assert.throws(() => buildMysqlQuery("mysql_list_schemas", { namePrefix: "bad\0name" }));
+  for (const args of [{}, { connectionId: 12 }, { connectionId: "1 OR 1" }, { connectionId: "1", schema: "sg" }])
+    assert.throws(() => buildMysqlQuery("mysql_get_processlist_by_connection_id", args));
+  assert.throws(() => buildMysqlQuery("mysql_get_processlist_by_database", {}));
+  assert.throws(() => buildMysqlQuery("mysql_get_processlist_by_database", { databaseName: "sg", connectionId: "1" }));
+  assert.throws(() => buildMysqlQuery("mysql_get_lock_waits_by_database", {}));
+  assert.throws(() => buildMysqlQuery("mysql_get_lock_waits_by_table", { databaseName: "sg" }));
+  assert.throws(() => buildMysqlQuery("mysql_get_lock_waits_by_connection_id", { connectionId: "?" }));
+  assert.throws(() => buildMysqlQuery("mysql_get_all_transactions", { connectionId: "1" }));
+  assert.throws(() => buildMysqlQuery("mysql_get_transactions_by_connection_id", {}));
+  assert.throws(() => buildMysqlQuery("mysql_get_transaction_by_transaction_id", {}));
+  assert.throws(() => buildMysqlQuery("mysql_list_databases", { namePrefix: "sg" }));
 });
 test("returns raw rows and truncation with cleanup", async () => {
   let closed = false;
@@ -93,7 +109,7 @@ test("returns raw rows and truncation with cleanup", async () => {
   if (result.ok && "rawResult" in result && result.rawResult.transport === "mysql") {
     assert.equal(result.rawResult.truncated, true); assert.equal(result.rawResult.returnedRows, 1);
     assert.equal(result.rawResult.rows[0].currentStatement, null);
-    assert.deepEqual(result.rawResult.appliedFilters, { includeIdle: false });
+    assert.deepEqual(result.rawResult.appliedFilters, {});
     assert.equal(result.rawResult.limit, 1);
   }
 });
@@ -119,7 +135,7 @@ test("deadline destroys active and late connections; parallel calls remain isola
   assert.ok(!late.ok && late.error.code === "tool_timeout");
   await new Promise(r => setTimeout(r, 40)); assert.ok(lateClosed);
   let destroyed = 0;
-  const results = await Promise.all(Array.from({ length: 12 }, (_, i) => executeMysqlTool(tool, { connectionId: String(i) }, context,
+  const results = await Promise.all(Array.from({ length: 12 }, () => executeMysqlTool(tool, {}, context,
     async () => ({ execute: async (_sql, values) => [{ id: values[0] }], destroy() { destroyed++; } }), env)));
   assert.equal(destroyed, 12); assert.ok(results.every(r => r.ok));
 });
