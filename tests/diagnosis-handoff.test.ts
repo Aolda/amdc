@@ -58,22 +58,36 @@ test("model cannot supply results, fabricate IDs, duplicate annotations or refer
   assert.deepEqual(handoff.observations.map(call => call.related_call_ids), [[second.tool_call_id], [first.tool_call_id]]);
 });
 
-test("parallel tool completion preserves dispatch order and exposes matching IDs to the model", async () => {
+test("parallel requests execute serially and expose dispatch-ordered IDs", { timeout: 2000 }, async () => {
   const ledger = new DiagnosisLedger("diag-parallel");
   let finishFirst!: () => void;
+  let signalStarted!: () => void;
   const gate = new Promise<void>(resolve => { finishFirst = resolve; });
+  const firstStarted = new Promise<void>(resolve => { signalStarted = resolve; });
+  const started: number[] = [];
   const [tool] = createAmdcLangChainTools([descriptor], { execute: async request => {
-    if ((request.args as { connectionId: number }).connectionId === 1) await gate;
-    else finishFirst();
+    const id = (request.args as { connectionId: number }).connectionId;
+    started.push(id);
+    if (id === 1) { signalStarted(); await gate; }
     return empty;
   } }, { environment: "dev", referenceTime: new Date(), runId: "diag-parallel", ledger, traceSink: { record: async () => {} } });
-  const results = await Promise.all([tool.invoke({ connectionId: 1 }), tool.invoke({ connectionId: 2 })]);
+  const pending = [tool.invoke({ connectionId: 1 }), tool.invoke({ connectionId: 2 })];
+  await firstStarted;
+  try { assert.deepEqual(started, [1]); } finally { finishFirst(); }
+  const results = await Promise.all(pending);
   const handoff = ledger.assemble("test", draft);
+  assert.deepEqual(started, [1, 2]);
   assert.deepEqual(handoff.observations.map(call => call.seq), [1, 2]);
   assert.deepEqual(handoff.observations.map(call => call.input.connectionId), [1, 2]);
   assert.deepEqual(results.map(result => JSON.parse(String(result)).tool_call_id), handoff.observations.map(call => call.tool_call_id));
-});
 
+  // Ledger ordering remains independent of completion ordering.
+  const reversed = new DiagnosisLedger("diag-reversed");
+  const first = reversed.begin(descriptor, { connectionId: 1 });
+  const second = reversed.begin(descriptor, { connectionId: 2 });
+  reversed.finish(second, empty); reversed.finish(first, empty);
+  assert.deepEqual(reversed.assemble("test", draft).observations.map(call => call.seq), [1, 2]);
+});
 test("unexpected runtime errors are sanitized and recorded, repeated attempts are not lost", async () => {
   const ledger = new DiagnosisLedger("diag-errors");
   let calls = 0;

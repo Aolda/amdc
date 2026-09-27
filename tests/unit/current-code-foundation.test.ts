@@ -68,28 +68,13 @@ function createDiagnosis(
   overrides: Partial<AgentDiagnosisResult> = {}
 ): AgentDiagnosisResult {
   return {
-    symptom: "Backend errors increased.",
-    environment: "dev",
-    inferredDomains: [
-      { domain: "backend", reason: "The symptom names the backend." }
-    ],
-    selectedTools: [],
+    diagnosis_id: "diag-foundation",
+    request: "Backend errors increased.",
+    completion_reason: "investigation_complete",
     observations: [],
-    toolErrors: [],
-    preliminaryFindings: [
-      {
-        finding: "Backend evidence requires review.",
-        basis: ["backend_health"],
-        level: "warning"
-      }
-    ],
-    suspectedCauses: [],
-    recommendedChecks: [],
-    incompleteReasons: [],
     ...overrides
   };
 }
-
 describe("current-code test foundation", () => {
   it("parses and freezes a read-only tool catalog", () => {
     const catalog = createCatalog();
@@ -188,42 +173,56 @@ describe("current-code test foundation", () => {
 
   it("keeps the temporary presenter and Discord formatter deterministic", () => {
     const presenter = new TemporaryDiagnosticPresenter();
-    const presentation = presenter.createPresentation(
-      createDiagnosis({
-        observations: [
-          {
-            toolName: "backend_health",
-            pluginName: "backend",
-            source: "amdb_backend",
-            status: "warning",
-            summary: "Backend health is degraded.",
-            facts: [],
-            collectedAt: "2026-09-04T00:00:00.000Z"
-          }
-        ],
-        suspectedCauses: [
-          {
-            cause: "A backend dependency may be degraded.",
-            reason: "The health observation is a warning.",
-            confidence: "medium"
-          }
-        ],
-        recommendedChecks: ["Review the dependency health response."]
-      })
-    );
+    const observation = {
+      toolName: "backend_health",
+      pluginName: "backend" as const,
+      source: "amdb_backend" as const,
+      status: "warning" as const,
+      summary: "Backend health is degraded.",
+      facts: [],
+      collectedAt: "2026-09-04T00:00:00.000Z"
+    };
+    const diagnosis = createDiagnosis({ observations: [{
+      seq: 1,
+      tool_call_id: "diag-foundation:call-1",
+      plugin: "backend",
+      tool: "backend_health",
+      input: {},
+      observed_at: observation.collectedAt,
+      status: "success",
+      result: observation,
+      error: null,
+      comment: {
+        observation: "Backend evidence requires review.",
+        hypothesis: "A backend dependency may be degraded.",
+        limitation: "The affected dependency is unconfirmed."
+      },
+      related_call_ids: []
+    }] });
+    const presentation = presenter.createPresentation(diagnosis);
 
-    assert.equal(presentation.status, "problem_detected");
+    assert.deepEqual(presentation, diagnosis);
+    assert.notEqual(presentation, diagnosis);
+    assert.notEqual(presentation.observations[0].result, diagnosis.observations[0].result);
+    assert.equal("status" in presentation, false);
     assert.equal(
       formatDiagnosticPresentation(presentation),
       [
-        "## AMDC Diagnostic Agent Result",
+        "## AMDC 진단 인계 자료",
         "",
-        "**Status:** problem_detected",
-        "**Summary:** Domains: backend. Backend evidence requires review.",
-        "**Suspected Cause:** A backend dependency may be degraded.",
+        "진단 ID: diag-foundation",
+        "요청: Backend errors increased.",
+        "종료 사유: investigation_complete",
+        "전체 구조화 결과: amdc-diagnosis.json 첨부 파일",
         "",
-        "**Recommended Actions**",
-        "1. Review the dependency health response."
+        "**1. backend / backend_health**",
+        "호출 ID: diag-foundation:call-1",
+        "조회 시각: 2026-09-04T00:00:00.000Z · 실행 상태: success",
+        "입력: {}",
+        `결과: ${JSON.stringify(observation)}`,
+        "관찰 comment: Backend evidence requires review.",
+        "가설 comment: A backend dependency may be degraded.",
+        "한계 comment: The affected dependency is unconfirmed."
       ].join("\n")
     );
   });

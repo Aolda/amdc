@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { retrieve, tokenize } from '../scripts/lib/knowledge-retrieval.mjs';
-const data = JSON.parse(readFileSync(new URL('../knowledge/amdb-domain.json', import.meta.url), 'utf8'));
+import type { KnowledgeCard } from '../scripts/lib/knowledge-retrieval.mjs';
+const data: { cards: KnowledgeCard[] } = JSON.parse(readFileSync(new URL('../knowledge/amdb-domain.json', import.meta.url), 'utf8'));
 test('knowledge retrieval handles natural Korean queries without query-specific aliases', () => {
   assert.ok(retrieve('sg DB가 느려졌는데 어떤 계정으로 확인해야 해?', data.cards).some(c=>c.id==='database-identity'));
   assert.ok(retrieve('메트릭 연결 수 라벨',data.cards).some(c=>c.id==='metric-labels'));
@@ -16,6 +17,6 @@ test('knowledge retrieval preserves provenance and bounds query/context', () => 
   assert.ok(tokenize('amdb_user_connections').includes('amdb_user_connections'));
 });
 test('knowledge includes exact identifier and metric label mappings', () => {
-  assert.ok(data.cards.find(c=>c.id==='database-identity').content.includes("name + '_' + user_id.replace('-', '')[:8]"));
-  assert.ok(data.cards.find(c=>c.id==='metric-labels').content.includes('username=mysql_db_name'));
+  assert.ok(data.cards.find(c=>c.id==='database-identity')?.content.includes("name + '_' + user_id.replace('-', '')[:8]"));
+  assert.ok(data.cards.find(c=>c.id==='metric-labels')?.content.includes('username=mysql_db_name'));
 });

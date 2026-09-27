@@ -86,6 +86,7 @@ function buildToolError(
   occurredAt: string
 ): SanitizedToolError {
   const messages: Record<SanitizedToolError["code"], string> = {
+    tool_call_limit_reached: "This tool has reached its per-diagnosis call limit.",
     unknown_tool: "Unknown tool requested.",
     invalid_input: "Tool input did not match the declared schema.",
     environment_not_allowed: "Tool is not allowed in the current environment.",
