@@ -25,6 +25,15 @@ ReportAgent 인계, 정본 영속화 또는 전달 실패 검증이 아니다.
 상태에서 통과했다. 이 결과는 TypeScript 정적 검사 근거일 뿐 REST, Run/SQLite,
 도구 코어, Evidence/Report, 실패 주입이나 Discord 전달 순서를 검증하지 않는다.
 
+### 2026-09-24 현재 코드 CI 판정 (PAAR/PAR)
+
+- Problem: `develop@795990e`의 CI는 PR head를 직접 체크아웃해 병합 결과를 검증하지 않는다. 충돌한 PR에서는 `pull_request` 실행 자체가 멈추므로 체크가 없는 상태를 통과로 해석할 수 없다.
+- Analyze: 기존 워크플로의 기본 PR merge 체크아웃을 사용하면 하나의 체크에서 통합 결과를 검증한다. 새 head 전용 워크플로는 중복 실행과 서로 다른 통과 신호를 만들고, 충돌로 막힌 PR 이벤트도 해결하지 못한다.
+- Action: 기존 워크플로의 명시적 head 체크아웃만 제거한다. Linux Node.js 20에서 `npm ci`, `npm test`, `npm run typecheck`, `npm run build`를 유지한다. 실제 AMDB/OpenAI 자격 증명과 Docker 운영 환경, PR 충돌 해결, 제품 코드 수정은 범위 밖이다. 롤백은 체크아웃 변경을 되돌리는 것이다.
+- Result: 충돌 없는 `develop` 대상 PR의 테스트 대상이 GitHub 생성 merge ref이며 네 명령 중 하나라도 실패하면 단일 CI job이 실패해야 한다. `develop` push는 해당 커밋을 검사한다. 워크플로 구문, 로컬 명령 결과와 PR의 실제 체크 SHA를 각각 확인한다.
+
+`develop@795990e`에는 재귀적으로 현재 코드 테스트를 찾아 실행하고 테스트 파일이 0개면 실패하는 `tests/run-tests.mjs`와 가짜 입력 기반 테스트 4개가 있다. 이 CI는 해당 코드의 회귀, TypeScript 검사와 빌드 가능성만 확인한다. 위의 정본 P0 수직 흐름, 실제 원천 통합, 성능 임계값, Windows 이식성은 아직 입증하지 않는다. Windows 개발자는 로컬 `npm test` 실패를 Linux CI와 별도로 보고한다.
+
 이 게이트와 아래 인계는 API/대기열/저장, 진단 에이전트/도구 코어, 가짜 원천,
 증거/오류, 리포트 에이전트/조립/영속화와 가짜 Discord 전달을 대상으로
 한다. 실제 원천 어댑터와 개발 환경 간이 점검의 정확한 매핑은 PRD 05가 소유하며 아직
