@@ -1,3 +1,4 @@
+import { sanitizeSqlRow } from "../security/sanitize-sql.js";
 import { createConnection } from "mysql2/promise";
 import type { ConnectionOptions, RowDataPacket } from "mysql2";
 import type { ToolDefinition, ToolRuntimeContext, ToolRuntimeResult, SanitizedToolError } from "../types.js";
@@ -106,7 +107,7 @@ export async function executeMysqlTool(tool: ToolDefinition, args: Record<string
       if (expired) { reader.destroy(); throw new Error("tool_timeout"); }
       const sql = proxy ? query.sql : query.sql.replace(/^SELECT /, `SELECT /*+ MAX_EXECUTION_TIME(${Math.max(1, Math.floor(tool.timeoutMs))}) */ `);
       const rows = await reader.execute(sql, query.values);
-      const selected = rows.slice(0, query.limit);
+      const selected = rows.slice(0, query.limit).map(sanitizeSqlRow);
       const body = JSON.stringify(selected);
       if (Buffer.byteLength(body) > MAX_BYTES) return failure("tool_output_too_large");
       const secrets = Object.entries(environment).filter(([k,v]) => /TOKEN|PASSWORD|SECRET|API_KEY|PRIVATE_KEY|SESSION/i.test(k) && v && v.length >= 8).map(([,v]) => v!);

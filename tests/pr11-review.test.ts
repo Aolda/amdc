@@ -85,7 +85,7 @@ test('schema rejection, duplicate rejection and runtime errors consume budget wi
   assert.equal(calls,6);
 });
 
-test('MySQL and ProxySQL retain SQL text for diagnostic integration',async()=>{
+test('MySQL and ProxySQL preserve SQL structure without literal values',async()=>{
   for(const name of ['mysql_get_all_processlist','mysql_get_all_transactions','proxysql_get_all_processlist','proxysql_get_query_digests']) {
     const definition = registry.getTool(name)!;
     assert.ok(definition);
@@ -97,8 +97,11 @@ test('MySQL and ProxySQL retain SQL text for diagnostic integration',async()=>{
     const visible = registry.listAllTools().find(d=>d.name===definition.name)!;
     const [wrapped]=createAmdcLangChainTools([visible],{execute:async()=>result},context);
     const output=String(await wrapped.invoke({}));
-    assert.ok(output.includes(statement));
-    assert.doesNotMatch(output,/SQL text omitted/); assert.match(output,/connectionId/);
+    assert.ok(!output.includes(statement));
+    assert.match(output,/SELECT/);
+    assert.match(output,/\?/);
+    assert.doesNotMatch(output,/= 1/);
+    assert.match(output,/connectionId/);
   }
 });
 

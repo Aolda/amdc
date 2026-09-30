@@ -58,10 +58,10 @@ export class LangChainDiagnosticAgent implements DiagnosticAgentPort {
     const tools = createAmdcLangChainTools(toolDescriptors, this.toolRuntime, {
       environment: input.environment,
       referenceTime,
-      disabledTools,
       runId,
       traceSink,
-      ledger
+      ledger,
+      disabledTools
     });
     const pluginMiddleware = createPluginLazyLoadingMiddleware(this.registry, {
       runId,

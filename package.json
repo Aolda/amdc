@@ -16,6 +16,7 @@
     "discord.js": "^14.22.1",
     "dotenv": "^17.2.1",
     "langchain": "^1.5.4",
+    "node-sql-parser": "5.4.0",
     "yaml": "^2.9.0",
     "zod": "^4.4.3",
     "ajv": "8.20.0",
