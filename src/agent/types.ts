@@ -4,7 +4,8 @@ import type {
   ObservationStatus,
   PluginName,
   SanitizedToolError,
-  ToolObservation
+  ToolObservation,
+  RawToolResult
 } from "../tools/types.js";
 
 export interface DiagnosticAgentInput {
@@ -37,6 +38,7 @@ export interface AgentDiagnosisResult {
   readonly inferredDomains: readonly InferredDomain[];
   readonly selectedTools: readonly AgentVisibleToolDescriptor[];
   readonly observations: readonly ToolObservation[];
+  readonly rawResults?: readonly RawToolResult[];
   readonly toolErrors: readonly SanitizedToolError[];
   readonly preliminaryFindings: readonly PreliminaryFinding[];
   readonly suspectedCauses: readonly SuspectedCause[];
