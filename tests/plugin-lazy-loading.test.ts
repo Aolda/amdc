@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import type { ClientTool } from "@langchain/core/tools";
 import {
   createNextPluginSelectionState,
   createPluginSelectionPayload,
@@ -37,7 +38,7 @@ const availableTools = [
   { name: PLUGIN_SELECTION_TOOL_NAME },
   { name: "mysql_check_connections" },
   { name: "backend_check_health" }
-] as never[];
+] as unknown as ClientTool[];
 
 test("initial model call exposes only plugin selection", () => {
   const visible = filterToolsForActivePlugin(availableTools, registry, null);

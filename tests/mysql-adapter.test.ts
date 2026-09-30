@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
 import { jsonObjectSchemaToZod } from "../src/agent/langchain-schemas.js";
 import { loadToolCatalogFromYaml, parseToolCatalog } from "../src/tools/catalog-loader.js";
 import { PluginRegistry } from "../src/tools/plugin-registry.js";
 import { buildMysqlQuery as buildQuery, executeMysqlTool, type MysqlConnect } from "../src/tools/source-adapters/mysql-adapter.js";
-const registry = new PluginRegistry(loadToolCatalogFromYaml(new URL("../src/tools/catalogs/amdb-tools.yaml", import.meta.url).pathname));
+const registry = new PluginRegistry(loadToolCatalogFromYaml(fileURLToPath(new URL("../src/tools/catalogs/amdb-tools.yaml", import.meta.url))));
 const MYSQL_OPERATIONS = registry.listAllTools().filter(t => registry.getTool(t.name)?.execution.type === "mysql_sql").map(t => t.name);
 const buildMysqlQuery = (name: string, args: Record<string, unknown>) => buildQuery(registry.getTool(name)!, args);
 const env = { AMDC_DEV_MYSQL_HOST: "fake", AMDC_DEV_MYSQL_USER: "diagnostic", AMDC_DEV_MYSQL_PASSWORD: "fake-password" };
