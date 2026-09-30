@@ -121,6 +121,15 @@ export function renderLocalShellCommand(
       return { ok: false };
     }
 
+    // All current local-shell substitutions are server-configured health URLs.
+    // Restrict the target to one explicit HTTP(S) URL, with no credentials or curl globbing.
+    try {
+      const url = new URL(value);
+      if (!/^https?:\/\//i.test(value) || !["http:", "https:"].includes(url.protocol) ||
+          (context.environment === "prod" && url.protocol !== "https:") ||
+          !url.hostname || url.username || url.password || url.search || url.hash ||
+          /[\x00-\x20\x7f{}\\]/.test(value)) return { ok: false };
+    } catch { return { ok: false }; }
     values.set(logicalName, value);
   }
 

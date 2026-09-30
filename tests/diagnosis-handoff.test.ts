@@ -58,17 +58,19 @@ test("model cannot supply results, fabricate IDs, duplicate annotations or refer
   assert.deepEqual(handoff.observations.map(call => call.related_call_ids), [[second.tool_call_id], [first.tool_call_id]]);
 });
 
-test("parallel tool completion preserves dispatch order and exposes matching IDs to the model", async () => {
+test("concurrent requests execute sequentially and expose ordered IDs to the model", async () => {
   const ledger = new DiagnosisLedger("diag-parallel");
-  let finishFirst!: () => void;
-  const gate = new Promise<void>(resolve => { finishFirst = resolve; });
+  let active = 0;
+  let peak = 0;
   const [tool] = createAmdcLangChainTools([descriptor], { execute: async request => {
-    if ((request.args as { connectionId: number }).connectionId === 1) await gate;
-    else finishFirst();
+    peak = Math.max(peak, ++active);
+    await new Promise(resolve => setTimeout(resolve, 2));
+    active--;
     return empty;
   } }, { environment: "dev", referenceTime: new Date(), runId: "diag-parallel", ledger, traceSink: { record: async () => {} } });
   const results = await Promise.all([tool.invoke({ connectionId: 1 }), tool.invoke({ connectionId: 2 })]);
   const handoff = ledger.assemble("test", draft);
+  assert.equal(peak, 1);
   assert.deepEqual(handoff.observations.map(call => call.seq), [1, 2]);
   assert.deepEqual(handoff.observations.map(call => call.input.connectionId), [1, 2]);
   assert.deepEqual(results.map(result => JSON.parse(String(result)).tool_call_id), handoff.observations.map(call => call.tool_call_id));

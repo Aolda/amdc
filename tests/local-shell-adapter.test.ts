@@ -45,14 +45,14 @@ const context: ToolRuntimeContext = {
 
 test("injects only the server-owned environment value into the fixed command", async () => {
   const result = await withEnvironment(
-    { AMDC_DEV_HEALTHCHECK_URL: "http://backend.internal/health?name=o'hare" },
+    { AMDC_DEV_HEALTHCHECK_URL: "http://backend.internal/health/o'hare" },
     async () => renderLocalShellCommand(execution, context)
   );
 
   assert.deepEqual(result, {
     ok: true,
     command:
-      "curl --silent --include 'http://backend.internal/health?name=o'\"'\"'hare'"
+      "curl --silent --include 'http://backend.internal/health/o'\"'\"'hare'"
   });
 });
 
@@ -82,7 +82,7 @@ test("returns stdout, stderr, and a non-zero exit code without interpretation", 
     "curl --silent --include 'http://backend.internal/health'"
   );
   assert.equal(result.ok, true);
-  if (!result.ok || !("rawResult" in result)) {
+  if (!result.ok || !("rawResult" in result) || result.rawResult.transport !== "local_shell") {
     assert.fail("Expected a raw local-shell result.");
   }
   assert.deepEqual(result.rawResult.execution, {
@@ -116,7 +116,9 @@ test("does not execute when the server environment value is missing", async () =
   assert.equal(result.error.code, "source_unavailable");
 });
 
-test("executes a fixed command through the local shell and captures raw streams", async () => {
+test("executes a fixed command through the local shell and captures raw streams", {
+  skip: process.platform === "win32" ? "Requires the POSIX /bin/sh adapter" : false
+}, async () => {
   const result = await executeLocalShellCommand(
     "printf 'raw stdout'; printf 'raw stderr' >&2; exit 7",
     1_000

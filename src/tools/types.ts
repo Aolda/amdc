@@ -211,6 +211,7 @@ export interface SanitizedToolError {
   readonly toolName: string;
   readonly pluginName: PluginName | null;
   readonly code:
+    | "tool_call_limit_reached"
     | "unknown_tool"
     | "invalid_input"
     | "environment_not_allowed"

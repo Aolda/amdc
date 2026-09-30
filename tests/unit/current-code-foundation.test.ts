@@ -1,0 +1,205 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { formatDiagnosticPresentation } from "../../src/adapters/discord/format-report.js";
+import type { AgentDiagnosisResult } from "../../src/agent/types.js";
+import { TemporaryDiagnosticPresenter } from "../../src/report/temporary-diagnostic-presenter.js";
+import { parseToolCatalog } from "../../src/tools/catalog-loader.js";
+import { PluginRegistry } from "../../src/tools/plugin-registry.js";
+import type { ToolCatalog } from "../../src/tools/types.js";
+
+function createCatalog(): ToolCatalog {
+  return parseToolCatalog({
+    plugins: [
+      {
+        name: "backend",
+        description: " Backend checks ",
+        domainHints: [" api "],
+        tools: [
+          {
+            name: "backend_health",
+            description: " Check backend health ",
+            access: { level: 0, readOnly: true },
+            source: "amdb_backend",
+            allowedEnvironments: ["dev"],
+            timeoutMs: 5000,
+            input: {
+              type: "object",
+              additionalProperties: false
+            },
+            execution: {
+              type: "source_adapter",
+              operation: "backend_health"
+            }
+          }
+        ]
+      },
+      {
+        name: "logs",
+        description: "Log checks",
+        domainHints: ["logs"],
+        tools: [
+          {
+            name: "recent_errors",
+            description: "Read recent errors",
+            access: { level: 0, readOnly: true },
+            source: "loki",
+            allowedEnvironments: ["dev"],
+            timeoutMs: 5000,
+            input: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                service: { type: "string", enum: ["backend", "celery-worker"] }
+              },
+              required: ["service"]
+            },
+            execution: {
+              type: "source_adapter",
+              operation: "recent_errors"
+            }
+          }
+        ]
+      }
+    ]
+  });
+}
+
+function createDiagnosis(
+  overrides: Partial<AgentDiagnosisResult> = {}
+): AgentDiagnosisResult {
+  return {
+    diagnosis_id: "diag-foundation",
+    request: "Backend errors increased.",
+    completion_reason: "investigation_complete",
+    observations: [],
+    ...overrides
+  };
+}
+
+describe("current-code test foundation", () => {
+  it("parses and freezes a read-only tool catalog", () => {
+    const catalog = createCatalog();
+
+    assert.equal(catalog.plugins[0]?.description, "Backend checks");
+    assert.equal(catalog.plugins[0]?.domainHints[0], "api");
+    assert.equal(catalog.plugins[0]?.tools[0]?.description, "Check backend health");
+    assert.equal(Object.isFrozen(catalog), true);
+    assert.equal(Object.isFrozen(catalog.plugins), true);
+    assert.equal(Object.isFrozen(catalog.plugins[0]?.tools), true);
+    for (const plugin of catalog.plugins) {
+      assert.equal(Object.isFrozen(plugin), true);
+      assert.equal(Object.isFrozen(plugin.domainHints), true);
+      assert.equal(Object.isFrozen(plugin.tools), true);
+      for (const tool of plugin.tools) {
+        assert.equal(Object.isFrozen(tool), true);
+        assert.equal(Object.isFrozen(tool.access), true);
+        assert.equal(Object.isFrozen(tool.allowedEnvironments), true);
+        assert.equal(Object.isFrozen(tool.inputSchema), true);
+        assert.equal(Object.isFrozen(tool.execution), true);
+        assert.equal(Reflect.set(tool.access, "readOnly", false), false);
+        assert.equal(tool.access.readOnly, true);
+      }
+    }
+    const schema = catalog.plugins[1]?.tools[0]?.inputSchema;
+    assert.ok(schema?.properties);
+    const service = schema.properties.service;
+    assert.ok(service?.type === "string");
+    assert.ok(service.enum);
+    assert.ok(schema.required);
+    assert.equal(Object.isFrozen(schema.properties), true);
+    assert.equal(Object.isFrozen(service), true);
+    assert.equal(Object.isFrozen(service.enum), true);
+    assert.equal(Object.isFrozen(schema.required), true);
+    assert.equal(Reflect.set(schema.properties, "service", { type: "boolean" }), false);
+    assert.equal(Reflect.set(service, "type", "boolean"), false);
+    assert.equal(Reflect.set(service.enum, "0", "unexpected"), false);
+    assert.equal(Reflect.set(schema.required, "0", "unexpected"), false);
+    assert.equal(service.type, "string");
+    assert.deepEqual(service.enum, ["backend", "celery-worker"]);
+    assert.deepEqual(schema.required, ["service"]);
+  });
+
+  it("rejects a writable tool before a registry can expose it", () => {
+    assert.throws(
+      () =>
+        parseToolCatalog({
+          plugins: [
+            {
+              name: "backend",
+              description: "Backend checks",
+              domainHints: [],
+              tools: [
+                {
+                  name: "restart_backend",
+                  description: "Must not be accepted",
+                  access: { level: 0, readOnly: false },
+                  source: "amdb_backend",
+                  allowedEnvironments: ["dev"],
+                  timeoutMs: 5000,
+                  input: { type: "object" },
+                  execution: {
+                    type: "source_adapter",
+                    operation: "restart_backend"
+                  }
+                }
+              ]
+            }
+          ]
+        }),
+      /readOnly must be true/
+    );
+  });
+
+  it("exposes only the selected plugin tools", () => {
+    const registry = new PluginRegistry(createCatalog());
+
+    assert.deepEqual(
+      registry.listToolsForPlugins(["backend", "logs"]).map((tool) => tool.name),
+      ["backend_health", "recent_errors"]
+    );
+    assert.deepEqual(registry.listToolsForPlugins([]), []);
+    assert.deepEqual(registry.listToolsForPlugins(["backend"]), [
+      {
+        name: "backend_health",
+        pluginName: "backend",
+        description: "Check backend health",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false
+        },
+        readOnly: true
+      }
+    ]);
+  });
+
+  it("keeps the temporary presenter and Discord formatter deterministic", () => {
+    const presenter = new TemporaryDiagnosticPresenter();
+    const diagnosis = createDiagnosis({
+        observations: [
+          {
+            seq: 1,
+            tool_call_id: "diag-foundation:call-1",
+            plugin: "backend",
+            tool: "backend_health",
+            input: {},
+            observed_at: "2026-09-04T00:00:00.000Z",
+            status: "success",
+            result: { toolName: "backend_health", pluginName: "backend", source: "amdb_backend",
+              status: "warning", summary: "Backend health is degraded.", facts: [],
+              collectedAt: "2026-09-04T00:00:00.000Z" },
+            error: null,
+            comment: null,
+            related_call_ids: []
+          }
+        ]
+      })
+    const presentation = presenter.createPresentation(diagnosis);
+    assert.deepEqual(presentation, diagnosis);
+    assert.notEqual(presentation, diagnosis);
+    const formatted = formatDiagnosticPresentation(presentation);
+    assert.equal(formatted, formatDiagnosticPresentation(presentation));
+    assert.match(formatted, /diag-foundation:call-1/);
+    assert.match(formatted, /Backend health is degraded/);
+    assert.doesNotMatch(formatted, /no_problem_detected/);
+  });
+});
