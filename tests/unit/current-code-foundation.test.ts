@@ -68,24 +68,10 @@ function createDiagnosis(
   overrides: Partial<AgentDiagnosisResult> = {}
 ): AgentDiagnosisResult {
   return {
-    symptom: "Backend errors increased.",
-    environment: "dev",
-    inferredDomains: [
-      { domain: "backend", reason: "The symptom names the backend." }
-    ],
-    selectedTools: [],
+    diagnosis_id: "diag-foundation",
+    request: "Backend errors increased.",
+    completion_reason: "investigation_complete",
     observations: [],
-    toolErrors: [],
-    preliminaryFindings: [
-      {
-        finding: "Backend evidence requires review.",
-        basis: ["backend_health"],
-        level: "warning"
-      }
-    ],
-    suspectedCauses: [],
-    recommendedChecks: [],
-    incompleteReasons: [],
     ...overrides
   };
 }
@@ -188,43 +174,32 @@ describe("current-code test foundation", () => {
 
   it("keeps the temporary presenter and Discord formatter deterministic", () => {
     const presenter = new TemporaryDiagnosticPresenter();
-    const presentation = presenter.createPresentation(
-      createDiagnosis({
+    const diagnosis = createDiagnosis({
         observations: [
           {
-            toolName: "backend_health",
-            pluginName: "backend",
-            source: "amdb_backend",
-            status: "warning",
-            summary: "Backend health is degraded.",
-            facts: [],
-            collectedAt: "2026-09-04T00:00:00.000Z"
+            seq: 1,
+            tool_call_id: "diag-foundation:call-1",
+            plugin: "backend",
+            tool: "backend_health",
+            input: {},
+            observed_at: "2026-09-04T00:00:00.000Z",
+            status: "success",
+            result: { toolName: "backend_health", pluginName: "backend", source: "amdb_backend",
+              status: "warning", summary: "Backend health is degraded.", facts: [],
+              collectedAt: "2026-09-04T00:00:00.000Z" },
+            error: null,
+            comment: null,
+            related_call_ids: []
           }
-        ],
-        suspectedCauses: [
-          {
-            cause: "A backend dependency may be degraded.",
-            reason: "The health observation is a warning.",
-            confidence: "medium"
-          }
-        ],
-        recommendedChecks: ["Review the dependency health response."]
+        ]
       })
-    );
-
-    assert.equal(presentation.status, "problem_detected");
-    assert.equal(
-      formatDiagnosticPresentation(presentation),
-      [
-        "## AMDC Diagnostic Agent Result",
-        "",
-        "**Status:** problem_detected",
-        "**Summary:** Domains: backend. Backend evidence requires review.",
-        "**Suspected Cause:** A backend dependency may be degraded.",
-        "",
-        "**Recommended Actions**",
-        "1. Review the dependency health response."
-      ].join("\n")
-    );
+    const presentation = presenter.createPresentation(diagnosis);
+    assert.deepEqual(presentation, diagnosis);
+    assert.notEqual(presentation, diagnosis);
+    const formatted = formatDiagnosticPresentation(presentation);
+    assert.equal(formatted, formatDiagnosticPresentation(presentation));
+    assert.match(formatted, /diag-foundation:call-1/);
+    assert.match(formatted, /Backend health is degraded/);
+    assert.doesNotMatch(formatted, /no_problem_detected/);
   });
 });

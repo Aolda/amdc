@@ -693,9 +693,22 @@ interface ToolObservation {
 정본 경계에서는 정제되고 정규화된 관찰 결과만 전달한다. 위 `rawResult` 분기는
 PR #11 시제품의 진단 Tool message 경로를 설명하며 정본 인계 허용을 뜻하지 않는다.
 
+### 수동 진단 실행 기록 시제품 (#14)
+
+현재 시제품의 `DiagnosisHandoff`는 AMDC가 순번, `tool_call_id`, 도구 입력,
+원천 어댑터의 제한된 결과 또는 정제된 오류를 기록하고, 모델이 기존 호출 ID에
+선택적 `observation`·`hypothesis`·`limitation` comment를 연결한 내부 산출물이다.
+실행 기록은 모델이 재작성하지 않으며 미존재·중복·자기 참조 ID를 거부한다.
+도구 호출이 없으면 `completion_reason`은 `insufficient_evidence`로 고정한다.
+이는 현재 `/diagnose`의 임시 표시 및 JSON 첨부를 위한 시제품 출력이다.
+원시 결과를 포함할 수 있으므로 정본 `ReportAgentInputV1`, 정본 Evidence,
+영속 Report 또는 영속화된 리포트 전용 Discord 전달에 직접 연결하지 않는다.
+그 연결에는 PRD 02/03/06의 정제·정규화·검증 어댑터가 별도로 필요하다.
+
 ### 진단 에이전트 출력
 
-진단 에이전트는 DiagnosisResult를 반환한다.
+아래 `DiagnosisResult`는 정본 인계에 요구되는 계약이다. 현재 수동 진단
+시제품은 위 `DiagnosisHandoff`를 반환하며 이 정본 계약의 구현 완료를 뜻하지 않는다.
 
 ~~~ts
 interface DiagnosisResult {

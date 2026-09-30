@@ -8,6 +8,8 @@
 리포트 전달 계약 게이트 상태: ready_for_implementation
 라이브 소스 게이트 상태: ready_for_design
 전달 상태: not_started
+수동 진단 시제품: 실행 기록과 선택적 comment를 `DiagnosisHandoff`로 조립한다.
+원시 결과를 포함할 수 있어 정본 Report Agent 입력·영속 Report의 완료 증거가 아니다.
 아키텍처 결정일: 2026-07-07
 최종 검토: 2026-09-11 (리뷰 보정안, 팀 승인 대기)
 

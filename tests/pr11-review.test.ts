@@ -2,13 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createAmdcLangChainTools } from '../src/agent/langchain-tool-wrapper.js';
-import { extractToolArtifacts } from '../src/agent/langchain-diagnostic-agent.js';
+import { DiagnosisLedger } from '../src/report/diagnosis-handoff.js';
 import { TemporaryDiagnosticPresenter } from '../src/report/temporary-diagnostic-presenter.js';
 import { executeMysqlTool } from '../src/tools/source-adapters/mysql-adapter.js';
 import { executeLocalShellTool } from '../src/tools/source-adapters/local-shell-adapter.js';
 import { loadToolCatalogFromYaml } from '../src/tools/catalog-loader.js';
 import { PluginRegistry } from '../src/tools/plugin-registry.js';
-import type { AgentDiagnosisResult } from '../src/agent/types.js';
 import type { AgentVisibleToolDescriptor, ToolRuntime, ToolRuntimeResult } from '../src/tools/types.js';
 const registry = new PluginRegistry(loadToolCatalogFromYaml(fileURLToPath(new URL('../src/tools/catalogs/amdb-tools.yaml', import.meta.url))));
 const context = { environment: 'dev' as const, referenceTime: new Date('2026-09-25T00:00:00.000Z'), runId: 'fixture', traceSink: { record: async () => {} } };
@@ -16,18 +15,16 @@ const descriptor: AgentVisibleToolDescriptor = { name: 'read', pluginName: 'mysq
   inputSchema: { type: 'object', additionalProperties: false, properties: { id: {type:'integer'} }, required:['id'] } };
 const raw: ToolRuntimeResult = { ok: true, rawResult: { toolName:'read', pluginName:'mysql', source:'mysql', collectedAt:context.referenceTime.toISOString(), transport:'mysql', rows:[], appliedFilters:{}, limit:1, returnedRows:0, truncated:false } };
 
-test('raw successes survive assembly and cannot produce a healthy verdict', () => {
-  const artifacts = extractToolArtifacts([{ name:'read', content:JSON.stringify(raw) }]);
-  assert.equal(artifacts.rawResults.length, 1);
-  const diagnosis: AgentDiagnosisResult = { symptom:'fixture', environment:'dev', inferredDomains:[], selectedTools:[],
-    observations:artifacts.observations, rawResults:artifacts.rawResults, toolErrors:[], preliminaryFindings:[{finding:'Suspected failure',basis:[],level:'critical'}], suspectedCauses:[], recommendedChecks:[], incompleteReasons:[] };
-  const presenter = new TemporaryDiagnosticPresenter();
-  assert.equal(presenter.createPresentation(diagnosis).status,'insufficient_tools');
-  assert.equal(presenter.createPresentation({...diagnosis, rawResults:[], preliminaryFindings:[]}).status,'insufficient_tools');
-  const normal = {toolName:'read',pluginName:'mysql' as const,source:'mysql' as const,status:'normal' as const,summary:'fixture',facts:[],collectedAt:context.referenceTime.toISOString()};
-  assert.equal(presenter.createPresentation({...diagnosis, observations:[normal], preliminaryFindings:[]}).status,'insufficient_tools');
-  assert.equal(presenter.createPresentation({...diagnosis, observations:[normal], rawResults:[], preliminaryFindings:[]}).status,'no_problem_detected');
-  assert.equal(presenter.createPresentation({...diagnosis, observations:[{...normal,status:'critical'}]}).status,'problem_detected');
+test('raw successes survive handoff without an invented healthy verdict', () => {
+  const ledger = new DiagnosisLedger('diag-raw');
+  ledger.finish(ledger.begin(descriptor, { id: 1 }), raw);
+  const diagnosis = ledger.assemble('fixture', { completion_reason: 'investigation_complete', comments: [] });
+  const presentation = new TemporaryDiagnosticPresenter().createPresentation(diagnosis);
+  assert.ok(raw.ok && 'rawResult' in raw);
+  assert.deepEqual(presentation.observations[0].result, raw.rawResult);
+  assert.equal(presentation.observations[0].status, 'success');
+  assert.equal('status' in presentation, false);
+  assert.equal('status' in presentation.observations[0].result!, false);
 });
 
 test('changing IDs cannot bypass each tool limit; other tools and new diagnoses have independent budgets', async () => {
@@ -122,7 +119,7 @@ test('LangChain hides exhausted tools, preserves limit responses and continues w
       calls=[{id:'other-call',name:'other',args:{id:1},type:'tool_call' as const}];
     } else {
       assert.equal(modelCalls,6);
-      calls=[{id:'final',name:names.find(n=>n.startsWith('extract-'))!,args:{inferredDomains:[],preliminaryFindings:[{finding:'Suspected failure',basis:['read'],level:'critical'}],suspectedCauses:[],recommendedChecks:[],incompleteReasons:[]},type:'tool_call' as const}];
+      calls=[{id:'final',name:names.find(n=>n.startsWith('extract-'))!,args:{completion_reason:'insufficient_evidence',comments:[]},type:'tool_call' as const}];
     }
     return {generations:[{text:'',message:new AIMessage({content:'',tool_calls:calls})}]};
   });
@@ -130,7 +127,9 @@ test('LangChain hides exhausted tools, preserves limit responses and continues w
     executions++;peak=Math.max(peak,++active);await new Promise(resolve=>setTimeout(resolve,2));active--;return raw;
   }},{model:'fixture',apiKey:'fixture'});
   const result=await agent.diagnose({symptom:'fixture',environment:'dev',requestedBy:'fixture',receivedAt:context.referenceTime.toISOString()});
-  assert.equal(executions,9);assert.equal(peak,1);assert.equal(result.rawResults?.length,9);
-  assert.ok(result.toolErrors.some(e=>String(e.code)==='tool_call_limit_reached'));
-  assert.equal(new TemporaryDiagnosticPresenter().createPresentation(result).status,'insufficient_tools');
+  assert.equal(executions,9);assert.equal(peak,1);
+  assert.equal(result.observations.filter(call=>call.tool==='read').length,10);
+  assert.equal(result.observations.filter(call=>call.error?.code==='tool_call_limit_reached').length,2);
+  assert.equal(result.completion_reason,'insufficient_evidence');
+  assert.equal('status' in new TemporaryDiagnosticPresenter().createPresentation(result),false);
 });

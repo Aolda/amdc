@@ -9,7 +9,7 @@ import {
 import type { AppConfig } from "../../config/env.js";
 import { runDiagnosis } from "../../app/run-diagnosis.js";
 import { buildDiagnoseCommand } from "./commands.js";
-import { formatDiagnosticPresentation } from "./format-report.js";
+import { formatDiagnosticPresentationMessages } from "./format-report.js";
 import {
   toSafeErrorMetadata,
   type SafeErrorMetadata
@@ -78,7 +78,18 @@ async function handleDiagnoseCommand(
       }
     );
 
-    await interaction.editReply(formatDiagnosticPresentation(result.presentation));
+    const messages = formatDiagnosticPresentationMessages(result.presentation);
+    await interaction.editReply({
+      content: messages[0],
+      files: [{
+        attachment: Buffer.from(JSON.stringify(result.presentation, null, 2), "utf8"),
+        name: "amdc-diagnosis.json"
+      }],
+      allowedMentions: { parse: [] }
+    });
+    for (const content of messages.slice(1)) {
+      await interaction.followUp({ content, allowedMentions: { parse: [] } });
+    }
   } catch (error) {
     const safeError = toSafeDiagnosticError(error);
     console.error("Failed to handle /diagnose interaction", safeError);
