@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { retrieve, tokenize } from '../scripts/lib/knowledge-retrieval.mjs';
 import type { KnowledgeCard } from '../scripts/lib/knowledge-retrieval.mjs';
-const data: { cards: KnowledgeCard[] } = JSON.parse(readFileSync(new URL('../knowledge/amdb-domain.json', import.meta.url), 'utf8'));
+const data = JSON.parse(readFileSync(new URL('../knowledge/amdb-domain.json', import.meta.url), 'utf8')) as { cards: KnowledgeCard[] };
 test('knowledge retrieval handles natural Korean queries without query-specific aliases', () => {
   assert.ok(retrieve('sg DB가 느려졌는데 어떤 계정으로 확인해야 해?', data.cards).some(c=>c.id==='database-identity'));
   assert.ok(retrieve('메트릭 연결 수 라벨',data.cards).some(c=>c.id==='metric-labels'));
