@@ -11,16 +11,20 @@ permissions:
 
 jobs:
   validate:
-    name: Linux / Node.js 20
+    name: Linux / Node.js ${{ matrix.node-version }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['22', '24']
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node-version }}
           package-manager-cache: false
       - run: npm ci
       - run: npm test
