@@ -9,7 +9,11 @@ import {
 import type { AppConfig } from "../../config/env.js";
 import { runDiagnosis } from "../../app/run-diagnosis.js";
 import { buildDiagnoseCommand } from "./commands.js";
-import { formatDiagnosticPresentation } from "./format-report.js";
+import { formatDiagnosticPresentationMessages } from "./format-report.js";
+import {
+  toSafeErrorMetadata,
+  type SafeErrorMetadata
+} from "../../observability/safe-error-metadata.js";
 
 export async function startDiscordBot(config: AppConfig): Promise<void> {
   await registerSlashCommands(config);
@@ -74,7 +78,18 @@ async function handleDiagnoseCommand(
       }
     );
 
-    await interaction.editReply(formatDiagnosticPresentation(result.presentation));
+    const messages = formatDiagnosticPresentationMessages(result.presentation);
+    await interaction.editReply({
+      content: messages[0],
+      files: [{
+        attachment: Buffer.from(JSON.stringify(result.presentation, null, 2), "utf8"),
+        name: "amdc-diagnosis.json"
+      }],
+      allowedMentions: { parse: [] }
+    });
+    for (const content of messages.slice(1)) {
+      await interaction.followUp({ content, allowedMentions: { parse: [] } });
+    }
   } catch (error) {
     const safeError = toSafeDiagnosticError(error);
     console.error("Failed to handle /diagnose interaction", safeError);
@@ -83,45 +98,30 @@ async function handleDiagnoseCommand(
 }
 
 interface SafeDiagnosticError {
-  readonly name: string;
-  readonly status?: number;
-  readonly code?: string;
-  readonly type?: string;
+  readonly errorStage: "discord_interaction";
+  readonly errorDetails: SafeErrorMetadata;
   readonly userMessage: string;
 }
 
 function toSafeDiagnosticError(error: unknown): SafeDiagnosticError {
-  const record = isRecord(error) ? error : {};
-  const status = typeof record.status === "number" ? record.status : undefined;
-  const code = typeof record.code === "string" ? record.code : undefined;
-  const type = typeof record.type === "string" ? record.type : undefined;
-  const name =
-    error instanceof Error
-      ? error.name
-      : typeof record.name === "string"
-        ? record.name
-        : "UnknownError";
+  const errorDetails = toSafeErrorMetadata(error);
 
-  if (status === 401 || code === "invalid_api_key") {
+  if (
+    errorDetails.status === 401 ||
+    errorDetails.code === "invalid_api_key" ||
+    errorDetails.category === "authentication"
+  ) {
     return {
-      name,
-      status,
-      code,
-      type,
+      errorStage: "discord_interaction",
+      errorDetails,
       userMessage:
         "AMDC LangChain provider 인증에 실패했습니다. 서버의 OPENAI_API_KEY 설정을 확인해주세요."
     };
   }
 
   return {
-    name,
-    status,
-    code,
-    type,
+    errorStage: "discord_interaction",
+    errorDetails,
     userMessage: "AMDC 진단 요청 처리 중 오류가 발생했습니다. 서버 로그를 확인해주세요."
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
