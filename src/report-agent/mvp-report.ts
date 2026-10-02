@@ -123,25 +123,59 @@ function comment(value: unknown): MvpObservation["diagnostic_comment"] {
 function collectStrings(value: unknown, output: Set<string>, depth = 0, budget = { nodes: 0 }): void {
   budget.nodes += 1;
   if (depth > 40 || budget.nodes > 65536) invalid();
-  if (typeof value === "string") { if (value.length >= 8) output.add(value); return; }
+  if (typeof value === "string") {
+    if (value.length >= 8) output.add(value);
+    // A JSON string may itself contain serialized JSON. Keep one traversal budget.
+    let parsed: unknown;
+    try { parsed = JSON.parse(value); }
+    catch (error) { if (!(error instanceof SyntaxError)) invalid(); }
+    if (parsed !== undefined) collectStrings(parsed, output, depth + 1, budget);
+    // JSON.parse drops duplicate members; curl can append HTTP trailers to JSON.
+    // Also retain JSON string values from the original text, without tokenizing prose.
+    for (const token of value.matchAll(/"(?:[^"\\]|\\.)*"/gs)) {
+      let next = token.index + token[0].length;
+      while (/[ \t\r\n]/.test(value.charAt(next)) && next < value.length) next += 1;
+      if (value.charAt(next) === ":") continue; // Object key, not a value.
+      let decoded: unknown;
+      try { decoded = JSON.parse(token[0]); }
+      catch (error) { if (error instanceof SyntaxError) continue; invalid(); }
+      if (typeof decoded === "string" && decoded.length >= 8 && !output.has(decoded)) {
+        collectStrings(decoded, output, depth + 1, budget);
+      }
+    }
+    return;
+  }
   if (Array.isArray(value)) { value.forEach(item => collectStrings(item, output, depth + 1, budget)); return; }
   if (value && typeof value === "object") Object.values(value).forEach(item => collectStrings(item, output, depth + 1, budget));
+}
+function collectRawText(value: string, output: Set<string>): void {
+  const budget = { nodes: 0 };
+  if (value.length >= 8) output.add(value);
+  let body = value.trimStart();
+  let blocks = 0;
+  // curl --include can prefix a response with proxy/1xx header blocks. Remove only
+  // anchored HTTP framing; splitting the entire output would break pretty JSON.
+  while (/^HTTP\/\d+(?:\.\d+)? [1-5]\d{2}(?: [^\r\n]*)?\r?\n/.test(body)) {
+    const separator = /\r?\n\r?\n/.exec(body);
+    if (!separator) break;
+    if (++blocks > 40) invalid();
+    for (const header of body.slice(0, separator.index).split(/\r?\n/).slice(1)) {
+      const colon = header.indexOf(":");
+      if (colon > 0) collectStrings(header.slice(colon + 1).trim(), output, 0, budget);
+    }
+    body = body.slice(separator.index + separator[0].length).trimStart();
+  }
+  collectStrings(body.trim(), output, 0, budget);
 }
 function collectRawValues(result: Record<string, unknown>, output: Set<string>): void {
   if (result.transport === "mysql") collectStrings(result.rows, output);
   if (result.transport === "http") {
-    const body = (result.response as Record<string, unknown>).body;
-    collectStrings(body, output);
-    if (typeof body === "string") {
-      let parsed: unknown;
-      try { parsed = JSON.parse(body); } catch { /* Non-JSON response. */ }
-      if (parsed !== undefined) collectStrings(parsed, output);
-    }
+    collectRawText((result.response as { body: string }).body, output);
   }
   if (result.transport === "local_shell") {
-    const execution = result.execution as Record<string, unknown>;
-    collectStrings(execution.stdout, output);
-    collectStrings(execution.stderr, output);
+    const execution = result.execution as { stdout: string; stderr: string };
+    collectRawText(execution.stdout, output);
+    collectRawText(execution.stderr, output);
   }
 }
 function rejectRawEcho(text: string, rawValues: ReadonlySet<string>): void {
@@ -228,8 +262,9 @@ export function validateMvpReport(value: unknown, containsSecret: (s: string) =>
   if (!Array.isArray(report.limitations) || report.limitations.length > MAX_CALLS + 3) invalid();
   report.limitations.forEach(item => { if (UNSAFE_COMMENT.test(string(item, 1000))) invalid(); });
   if (report.suspected_cause !== null) {
-    const cause = string(report.suspected_cause, 300);
-    if (UNSAFE_COMMENT.test(cause)) invalid();
+    // The draft schema counts Unicode code points; each uses at most two UTF-16 units.
+    const cause = string(report.suspected_cause, 600);
+    if ([...cause].length > 300 || UNSAFE_COMMENT.test(cause)) invalid();
   }
   if (!Array.isArray(report.observations) || report.observations.length > MAX_CALLS) invalid();
   const ids = report.observations.map((_, i) => `${report.diagnosis_id}:call-${i + 1}`);

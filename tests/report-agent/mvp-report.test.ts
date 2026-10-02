@@ -3,6 +3,7 @@ import test from "node:test";
 import { createSecretDetector } from "../../src/report-agent/security.js";
 import { ReportAgentError } from "../../src/report-agent/errors.js";
 import { createMvpReport, validateMvpReport } from "../../src/report-agent/mvp-report.js";
+import { createReportValidators } from "../../src/report-agent/validation.js";
 import type { ReportModelAdapter, ReportModelRequest } from "../../src/report-agent/report-agent.js";
 
 const diagnosis_id = "diag-123e4567-e89b-42d3-a456-426614174000";
@@ -29,6 +30,13 @@ function failure(seq = 1): Input {
 }
 function handoff(observations: Input[] = [mysql()]): Input {
   return { diagnosis_id, request: "Investigate service latency", completion_reason: "investigation_complete", observations };
+}
+function shell(output: string, stream: "stdout" | "stderr" = "stdout"): Input {
+  const call = mysql();
+  call.result = { toolName: call.tool, pluginName: call.plugin, source: "amdb_backend", collectedAt: at,
+    transport: "local_shell", execution: { stdout: "", stderr: "", [stream]: output, exitCode: 0 } };
+  call.comment = { observation: "The response alone does not establish a cause.", hypothesis: null, limitation: null };
+  return call;
 }
 class Model implements ReportModelAdapter {
   calls: ReportModelRequest[] = [];
@@ -211,4 +219,124 @@ test("absolute deadline is rechecked after final report validation", async () =>
   } finally {
     Date.now = originalNow;
   }
+});
+
+test("shell JSON scalar echoes are rejected across framing, escaping and both streams", async () => {
+  const rawValue = "private-customer-identifier-123";
+  const body = JSON.stringify({ details: [{ customer: rawValue }] }, null, 2).replace("[", "[\n");
+  const values = [
+    body,
+    JSON.stringify(rawValue),
+    JSON.stringify({ customer: rawValue }).replace("private", "\\u0070rivate"),
+    JSON.stringify({ nested: JSON.stringify({ customer: rawValue }) }),
+    `{"customer":"${rawValue}","customer":"public"}`,
+    `HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: X-Checksum\r\n\r\n${body}X-Checksum: synthetic-checksum\r\n`,
+    `HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n${body}`,
+    `HTTP/2 200\nContent-Type: application/json\n\n${body}`,
+    `HTTP/1.1 200 Connection established\r\n\r\nHTTP/1.1 103 Early Hints\r\nLink: unused\r\n\r\nHTTP/2 200\r\nContent-Type: application/json\r\n\r\n${body}`,
+  ];
+  for (const stream of ["stdout", "stderr"] as const) {
+    for (const value of values) {
+      const call = shell(value, stream);
+      call.comment = { observation: `Observed ${rawValue}.`, hypothesis: null, limitation: null };
+      const model = new Model();
+      await code(handoff([call]), "invalid_report_generation", model);
+      assert.equal(model.calls.length, 0);
+    }
+  }
+});
+
+test("shell header values and complete non-JSON bodies cannot be echoed", async () => {
+  const rawValue = "private-customer-identifier-123";
+  for (const output of [
+    `HTTP/1.1 200 OK\r\nX-Customer: ${rawValue}\r\n\r\n{}`,
+    `HTTP/1.1 204 No Content\r\nX-Customer: ${rawValue}\r\n\r\n`,
+    `HTTP/1.1 200 OK\nContent-Type: text/plain\n\n${rawValue}`,
+    `HTTP/1.1 200 OK\r\n\r\n\ufeff${JSON.stringify({ customer: rawValue })}\r\n`,
+    `${rawValue}\r\n`,
+    rawValue,
+  ]) {
+    const call = shell(output);
+    call.comment = { observation: `Observed ${rawValue}.`, hypothesis: null, limitation: null };
+    const model = new Model();
+    await code(handoff([call]), "invalid_report_generation", model);
+    assert.equal(model.calls.length, 0);
+  }
+});
+
+test("raw shell values cannot return through the model draft either", async () => {
+  for (const body of [
+    '{"customer":"private-customer-identifier-123"}',
+    '{"customer":"private-customer-identifier-123","customer":"public"}',
+    '{"customer":"private-customer-identifier-123"}X-Checksum: synthetic-checksum\r\n',
+  ]) {
+    for (const stream of ["stdout", "stderr"] as const) {
+      const call = shell(`HTTP/1.1 200 OK\r\n\r\n${body}`, stream);
+      const model = new Model();
+      model.result = { suspected_cause: "Observed private-customer-identifier-123." };
+      await code(handoff([call]), "invalid_report_generation", model);
+      assert.equal(model.calls.length, 1);
+    }
+  }
+});
+
+test("serialized JSON values share the same guard for HTTP and MySQL", async () => {
+  const body = JSON.stringify({ nested: '{"customer":"private-customer-identifier-123","customer":"public"}' });
+  const sqlCall = mysql();
+  (sqlCall.result as Input).rows = [{ body }];
+  const httpCall = mysql();
+  httpCall.result = { toolName: httpCall.tool, pluginName: httpCall.plugin, source: "amdb_backend", collectedAt: at,
+    transport: "http", response: { statusCode: 200, contentType: "application/json", body } };
+  for (const call of [sqlCall, httpCall]) {
+    call.comment = { observation: "Observed private-customer-identifier-123.", hypothesis: null, limitation: null };
+    const model = new Model();
+    await code(handoff([call]), "invalid_report_generation", model);
+    assert.equal(model.calls.length, 0);
+  }
+});
+
+test("raw text parsing preserves normal comments and existing transport metadata", async () => {
+  for (const output of ["", "HTTP/1.1 200 OK\r\n\r\n{invalid json", "plain diagnostic output", '{"details":["private-customer-identifier-123"]}']) {
+    const model = new Model();
+    const report = await createMvpReport(handoff([shell(output)]), { model, containsSecret: scanner });
+    assert.equal(model.calls.length, 1);
+    assert.equal(report.observations[0].execution_summary, "로컬 수집 실행 완료; 종료 코드 0.");
+    assert.equal(report.observations[0].diagnostic_comment?.observation, "The response alone does not establish a cause.");
+    assert.doesNotMatch(JSON.stringify(model.calls) + JSON.stringify(report), /private-customer-identifier-123|invalid json|plain diagnostic output/);
+  }
+  const http = shell("");
+  http.result = { toolName: http.tool, pluginName: http.plugin, source: "amdb_backend", collectedAt: at,
+    transport: "http", response: { statusCode: 200, contentType: "application/json", body: '{"customer":"private-customer-identifier-123"}' } };
+  http.comment = { observation: "Observed private-customer-identifier-123.", hypothesis: null, limitation: null };
+  const model = new Model();
+  await code(handoff([http]), "invalid_report_generation", model);
+  assert.equal(model.calls.length, 0);
+});
+
+test("decoded shell JSON still obeys depth and node budgets", async () => {
+  for (const body of ["[".repeat(41) + '"private-customer-identifier-123"' + "]".repeat(41), JSON.stringify(Array(65537).fill(0))]) {
+    const model = new Model();
+    await code(handoff([shell(`HTTP/1.1 200 OK\r\n\r\n${body}`)]), "invalid_report_generation", model);
+    assert.equal(model.calls.length, 0);
+  }
+});
+
+test("draft and final cause limits agree on Unicode code points", async () => {
+  const validators = createReportValidators({ containsSecret: scanner });
+  for (const length of [299, 300]) {
+    const cause = "A".repeat(length - 20) + "😀".repeat(20);
+    assert.equal([...cause].length, length);
+    assert.equal(validators.draft({ suspected_cause: cause }).suspected_cause, cause);
+    const model = new Model(); model.result = { suspected_cause: cause };
+    const report = await createMvpReport(handoff(), { model, containsSecret: scanner });
+    assert.equal(report.suspected_cause, cause);
+    assert.equal(model.calls.length, 1);
+    assert.equal(validateMvpReport(report, scanner).suspected_cause, cause);
+  }
+  const cause = "A".repeat(281) + "😀".repeat(20);
+  assert.throws(() => validators.draft({ suspected_cause: cause }), /invalid_report_generation/);
+  const model = new Model(); model.result = { suspected_cause: cause };
+  await code(handoff(), "invalid_report_generation", model);
+  const report = await createMvpReport(handoff(), { model: new Model(), containsSecret: scanner });
+  assert.throws(() => validateMvpReport({ ...report, suspected_cause: cause }, scanner), /invalid_report_generation/);
 });
