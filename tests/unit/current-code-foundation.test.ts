@@ -75,7 +75,6 @@ function createDiagnosis(
     ...overrides
   };
 }
-
 describe("current-code test foundation", () => {
   it("parses and freezes a read-only tool catalog", () => {
     const catalog = createCatalog();
@@ -174,32 +173,57 @@ describe("current-code test foundation", () => {
 
   it("keeps the temporary presenter and Discord formatter deterministic", () => {
     const presenter = new TemporaryDiagnosticPresenter();
-    const diagnosis = createDiagnosis({
-        observations: [
-          {
-            seq: 1,
-            tool_call_id: "diag-foundation:call-1",
-            plugin: "backend",
-            tool: "backend_health",
-            input: {},
-            observed_at: "2026-09-04T00:00:00.000Z",
-            status: "success",
-            result: { toolName: "backend_health", pluginName: "backend", source: "amdb_backend",
-              status: "warning", summary: "Backend health is degraded.", facts: [],
-              collectedAt: "2026-09-04T00:00:00.000Z" },
-            error: null,
-            comment: null,
-            related_call_ids: []
-          }
-        ]
-      })
+    const observation = {
+      toolName: "backend_health",
+      pluginName: "backend" as const,
+      source: "amdb_backend" as const,
+      status: "warning" as const,
+      summary: "Backend health is degraded.",
+      facts: [],
+      collectedAt: "2026-09-04T00:00:00.000Z"
+    };
+    const diagnosis = createDiagnosis({ observations: [{
+      seq: 1,
+      tool_call_id: "diag-foundation:call-1",
+      plugin: "backend",
+      tool: "backend_health",
+      input: {},
+      observed_at: observation.collectedAt,
+      status: "success",
+      result: observation,
+      error: null,
+      comment: {
+        observation: "Backend evidence requires review.",
+        hypothesis: "A backend dependency may be degraded.",
+        limitation: "The affected dependency is unconfirmed."
+      },
+      related_call_ids: []
+    }] });
     const presentation = presenter.createPresentation(diagnosis);
+
     assert.deepEqual(presentation, diagnosis);
     assert.notEqual(presentation, diagnosis);
-    const formatted = formatDiagnosticPresentation(presentation);
-    assert.equal(formatted, formatDiagnosticPresentation(presentation));
-    assert.match(formatted, /diag-foundation:call-1/);
-    assert.match(formatted, /Backend health is degraded/);
-    assert.doesNotMatch(formatted, /no_problem_detected/);
+    assert.notEqual(presentation.observations[0].result, diagnosis.observations[0].result);
+    assert.equal("status" in presentation, false);
+    assert.equal(
+      formatDiagnosticPresentation(presentation),
+      [
+        "## AMDC 진단 인계 자료",
+        "",
+        "진단 ID: diag-foundation",
+        "요청: Backend errors increased.",
+        "종료 사유: investigation_complete",
+        "전체 구조화 결과: amdc-diagnosis.json 첨부 파일",
+        "",
+        "**1. backend / backend_health**",
+        "호출 ID: diag-foundation:call-1",
+        "조회 시각: 2026-09-04T00:00:00.000Z · 실행 상태: success",
+        "입력: {}",
+        `결과: ${JSON.stringify(observation)}`,
+        "관찰 comment: Backend evidence requires review.",
+        "가설 comment: A backend dependency may be degraded.",
+        "한계 comment: The affected dependency is unconfirmed."
+      ].join("\n")
+    );
   });
 });

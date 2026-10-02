@@ -1,5 +1,4 @@
 import {
-  ChatInputCommandInteraction,
   Client,
   Events,
   GatewayIntentBits,
@@ -9,21 +8,53 @@ import {
 import type { AppConfig } from "../../config/env.js";
 import { runDiagnosis } from "../../app/run-diagnosis.js";
 import { buildDiagnoseCommand } from "./commands.js";
-import { formatDiagnosticPresentationMessages } from "./format-report.js";
-import {
-  toSafeErrorMetadata,
-  type SafeErrorMetadata
-} from "../../observability/safe-error-metadata.js";
+import { createReportFlow } from "../../app/report-flow.js";
+import { createOpenAIReportModel } from "../../report-agent/openai-report-model.js";
+import { createSecretDetector } from "../../report-agent/security.js";
+import { createFileMvpReportStore } from "../../reports/mvp-report-store.js";
+import { createReportCommandHandler } from "./report-command.js";
+
+/** One application delivery attempt must remain one SDK HTTP attempt on 5xx. */
+export function createDiscordClient(): Client {
+  return new Client({ intents: [GatewayIntentBits.Guilds], rest: { retries: 0 } });
+}
+
+export function createDiscordRegistrationRest(token: string): REST {
+  return new REST({ version: "10", retries: 0 }).setToken(token);
+}
 
 export async function startDiscordBot(config: AppConfig): Promise<void> {
+  const containsSecret = createSecretDetector(Object.entries(process.env)
+    .filter(([key, value]) => /TOKEN|PASSWORD|SECRET|API_KEY|PRIVATE_KEY|SESSION/i.test(key) && value)
+    .map(([, value]) => value!));
+  const flow = config.diagnosticRunnerMode === "langchain" ? createReportFlow({
+    diagnose: runDiagnosis,
+    model: createOpenAIReportModel(config),
+    store: createFileMvpReportStore(config.reportDirectory ?? "./data/reports", containsSecret),
+    containsSecret,
+  }) : undefined;
+  const handleDiagnoseCommand = createReportCommandHandler({
+    guildId: config.discordGuildId,
+    runnerMode: config.diagnosticRunnerMode,
+    containsSecret,
+    runReport: request => {
+      if (!flow) throw new Error("report_runner_unavailable");
+      return flow(request, {
+        environment: config.amdcEnvironment,
+        runnerMode: config.diagnosticRunnerMode,
+        agentModel: config.agentModel,
+        openaiApiKey: config.openaiApiKey,
+        openaiBaseUrl: config.openaiBaseUrl,
+      });
+    },
+    log: event => console.log(JSON.stringify(event)),
+  });
   await registerSlashCommands(config);
 
-  const client = new Client({
-    intents: [GatewayIntentBits.Guilds]
-  });
+  const client = createDiscordClient();
 
-  client.once(Events.ClientReady, (readyClient) => {
-    console.log(`AMDC Discord bot logged in as ${readyClient.user.tag}`);
+  client.once(Events.ClientReady, () => {
+    console.log("AMDC Discord bot ready");
   });
 
   client.on(Events.InteractionCreate, async (interaction) => {
@@ -35,14 +66,14 @@ export async function startDiscordBot(config: AppConfig): Promise<void> {
       return;
     }
 
-    await handleDiagnoseCommand(interaction, config);
+    await handleDiagnoseCommand(interaction);
   });
 
   await client.login(config.discordToken);
 }
 
 async function registerSlashCommands(config: AppConfig): Promise<void> {
-  const rest = new REST({ version: "10" }).setToken(config.discordToken);
+  const rest = createDiscordRegistrationRest(config.discordToken);
   const command = buildDiagnoseCommand();
 
   await rest.put(
@@ -50,78 +81,5 @@ async function registerSlashCommands(config: AppConfig): Promise<void> {
     { body: [command.toJSON()] }
   );
 
-  console.log(`Registered /diagnose for guild ${config.discordGuildId}`);
-}
-
-async function handleDiagnoseCommand(
-  interaction: ChatInputCommandInteraction,
-  config: AppConfig
-): Promise<void> {
-  await interaction.deferReply();
-
-  try {
-    const symptom = interaction.options.getString("symptom", true);
-
-    const result = await runDiagnosis(
-      {
-        symptom,
-        requestedBy: interaction.user.username,
-        source: "discord",
-        receivedAt: new Date().toISOString()
-      },
-      {
-        environment: config.amdcEnvironment,
-        runnerMode: config.diagnosticRunnerMode,
-        agentModel: config.agentModel,
-        openaiApiKey: config.openaiApiKey,
-        openaiBaseUrl: config.openaiBaseUrl
-      }
-    );
-
-    const messages = formatDiagnosticPresentationMessages(result.presentation);
-    await interaction.editReply({
-      content: messages[0],
-      files: [{
-        attachment: Buffer.from(JSON.stringify(result.presentation, null, 2), "utf8"),
-        name: "amdc-diagnosis.json"
-      }],
-      allowedMentions: { parse: [] }
-    });
-    for (const content of messages.slice(1)) {
-      await interaction.followUp({ content, allowedMentions: { parse: [] } });
-    }
-  } catch (error) {
-    const safeError = toSafeDiagnosticError(error);
-    console.error("Failed to handle /diagnose interaction", safeError);
-    await interaction.editReply(safeError.userMessage);
-  }
-}
-
-interface SafeDiagnosticError {
-  readonly errorStage: "discord_interaction";
-  readonly errorDetails: SafeErrorMetadata;
-  readonly userMessage: string;
-}
-
-function toSafeDiagnosticError(error: unknown): SafeDiagnosticError {
-  const errorDetails = toSafeErrorMetadata(error);
-
-  if (
-    errorDetails.status === 401 ||
-    errorDetails.code === "invalid_api_key" ||
-    errorDetails.category === "authentication"
-  ) {
-    return {
-      errorStage: "discord_interaction",
-      errorDetails,
-      userMessage:
-        "AMDC LangChain provider 인증에 실패했습니다. 서버의 OPENAI_API_KEY 설정을 확인해주세요."
-    };
-  }
-
-  return {
-    errorStage: "discord_interaction",
-    errorDetails,
-    userMessage: "AMDC 진단 요청 처리 중 오류가 발생했습니다. 서버 로그를 확인해주세요."
-  };
+  console.log("Registered /diagnose");
 }

@@ -1,6 +1,6 @@
 # AMDC P0 구현 PRD 패키지
 
-현재 P0 계약의 단일 진입점이다. 핵심·리포트 계약과 실제 구현 진척을 구분하고, 스키마 상수·진단 포트 연결·mock 연결 확인의 리뷰 보정안을 안내한다. 팀 승인과 제품 구현 검증은 아직 남아 있다.
+현재 P0 계약의 단일 진입점이다. 기존 V1 계약과 별도로 팀 진단 원장을 받는 1차 MVP 경로를 정의한다. MVP의 로컬 검증과 실제 서비스 연결을 구분하며 P0 전체 완료 여부는 별도로 판단한다.
 
 상태: 정본 구현 패키지
 패키지 게이트 상태: ready_for_design
@@ -25,6 +25,28 @@ API, 대기열, LangChain/도구 코어, 명시적 가짜 실행기, 증거/리�
 `ready_for_design`이다. PR #3·#5·#6의 Discord/Diagnostic 코드는 보존할
 상위 시제품/전환 증거이며 현재 P0 전달 완료 증거는 아니다.
 
+## 2026-09-27 1차 Report MVP
+
+팀 진단 PR의 `DiagnosisHandoff`를 받는 별도 MVP 경로는 구현되어 검증 단계다.
+`diag-*` 원장과 기존 Backend 5xx V1 계약을 강제 변환하지 않는다.
+MVP 입력과 모델 예산은 [PRD 06](06-diagnostic-agent-tool-runtime.md#1차-mvp-진단-원장-인계),
+출력·저장·전달은 [PRD 03](03-evidence-report-security.md#1차-mvp-리포트와-discord-전달)이 소유한다.
+실행 방법과 검증 현황은 [Discord MVP 안내](../../discord-mvp.md)에 둔다.
+
+위 패키지 게이트와 `전달 상태`는 REST/SQLite를 포함한 기존 P0 전체 기준이다.
+MVP 로컬 통과만으로 이를 승격하지 않는다. 아래 날짜별 분석은 당시 기록이다.
+
+## 2026-09-22 현재 구조 및 진단 기록 반영
+
+사용자 제공 구조·기록 양식은 [현재 아키텍처](../../../ARCHITECTURE.md)와
+[PRD 06의 진단 기록 입력 자료](06-diagnostic-agent-tool-runtime.md#2026-09-22-진단-기록-입력-자료)에 반영했다.
+[Report Agent 설계 준비안](../../design/report-agent-preparation.md)은 기존 계약과의 차이,
+생산자·소비자 결정 순서와 검증 시나리오를 연결한다.
+
+최신 MySQL 기록 양식을 받는 개정안은 ready_for_design이다.
+이 자료는 기존 Backend 5xx 전용 V1이나 정적 도구·SQLite 계약을 자동으로 대체하지 않는다.
+위 기존 핵심/리포트 게이트는 기존 계약 범위의 준비도이며 새 양식의 구현 준비도를 뜻하지 않는다.
+Delivery Status는 승격하지 않는다. 이하 2026-09-04 구현 대조는 당시 기록이다.
 ## 읽기 순서
 
 1. [00-product-scope-and-decisions.md](00-product-scope-and-decisions.md)

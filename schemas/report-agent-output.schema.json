@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://amdc.local/schemas/report-agent-output/1.0.0",
+  "title": "Report Agent output V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "report_schema_version", "run_id", "suspected_cause"],
+  "properties": {
+    "contract_version": {"const": "report-agent-output/1.0.0"},
+    "report_schema_version": {"const": "1.1.0"},
+    "run_id": {"$ref": "https://amdc.local/schemas/evidence/1.1.0#/properties/run_id"},
+    "suspected_cause": {"$ref": "https://amdc.local/schemas/report-narrative-draft/1.0.0#/$defs/suspectedCause"}
+  }
+}

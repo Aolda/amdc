@@ -15,26 +15,61 @@ const descriptor: AgentVisibleToolDescriptor = { name: 'read', pluginName: 'mysq
   inputSchema: { type: 'object', additionalProperties: false, properties: { id: {type:'integer'} }, required:['id'] } };
 const raw: ToolRuntimeResult = { ok: true, rawResult: { toolName:'read', pluginName:'mysql', source:'mysql', collectedAt:context.referenceTime.toISOString(), transport:'mysql', rows:[], appliedFilters:{}, limit:1, returnedRows:0, truncated:false } };
 
-test('raw successes survive handoff without an invented healthy verdict', () => {
+test('raw successes survive assembly and the handoff never adds a health verdict', () => {
   const ledger = new DiagnosisLedger('diag-raw');
-  ledger.finish(ledger.begin(descriptor, { id: 1 }), raw);
-  const diagnosis = ledger.assemble('fixture', { completion_reason: 'investigation_complete', comments: [] });
-  const presentation = new TemporaryDiagnosticPresenter().createPresentation(diagnosis);
+  const call = ledger.begin(descriptor, {id:1});
+  ledger.finish(call, raw);
+  const diagnosis = ledger.assemble('fixture', {completion_reason:'investigation_complete', comments:[{
+    tool_call_id:call.tool_call_id,
+    comment:{observation:null,hypothesis:'Suspected failure',limitation:'No impact has been confirmed.'},
+    related_call_ids:[]
+  }]});
+  const presenter = new TemporaryDiagnosticPresenter();
+  const presentation = presenter.createPresentation(diagnosis);
   assert.ok(raw.ok && 'rawResult' in raw);
-  assert.deepEqual(presentation.observations[0].result, raw.rawResult);
-  assert.equal(presentation.observations[0].status, 'success');
-  assert.equal('status' in presentation, false);
-  assert.equal('status' in presentation.observations[0].result!, false);
-});
+  assert.deepEqual(presentation.observations[0].result,raw.rawResult);
+  assert.equal(presentation.observations[0].comment?.hypothesis,'Suspected failure');
+  assert.deepEqual(presentation,diagnosis);
+  assert.notEqual(presentation,diagnosis);
+  assert.equal('status' in presentation,false);
 
+  const empty = presenter.createPresentation(new DiagnosisLedger('diag-empty').assemble('fixture',{
+    completion_reason:'investigation_complete',comments:[]
+  }));
+  assert.equal(empty.completion_reason,'insufficient_evidence');
+  assert.equal('status' in empty,false);
+  for (const status of ['normal','critical'] as const) {
+    const observed = new DiagnosisLedger(`diag-${status}`);
+    observed.finish(observed.begin(descriptor,{id:1}),{ok:true,observation:{
+      toolName:'read',pluginName:'mysql',source:'mysql',status,summary:'fixture',facts:[],collectedAt:context.referenceTime.toISOString()
+    }});
+    const result=presenter.createPresentation(observed.assemble('fixture',{completion_reason:'investigation_complete',comments:[]}));
+    const source=result.observations[0].result;
+    assert.ok(source && 'status' in source);
+    assert.equal(source.status,status);
+    assert.equal('status' in result,false);
+  }
+});
 test('changing IDs cannot bypass each tool limit; other tools and new diagnoses have independent budgets', async () => {
   let active=0, peak=0, calls=0;
   const runtime: ToolRuntime = { execute:async () => { calls++; peak=Math.max(peak,++active); await new Promise(resolve=>setTimeout(resolve,2)); active--; return raw; } };
-  const tools=createAmdcLangChainTools([descriptor,{...descriptor,name:'other'}],runtime,context);
+  const ledger=new DiagnosisLedger(context.runId);
+  const disabledTools=new Set<string>();
+  const tools=createAmdcLangChainTools([descriptor,{...descriptor,name:'other'}],runtime,{...context,ledger,disabledTools});
   const results=await Promise.allSettled(Array.from({length:20},(_,id)=>tools[id%2].invoke({id})));
   assert.equal(calls,16); assert.equal(peak,1); assert.equal(results.filter(r=>r.status==='rejected').length,0);
   assert.equal(results.filter(r=>r.status==='fulfilled' && String(r.value).includes('tool_call_limit_reached')).length,4);
 
+  assert.deepEqual([...disabledTools].sort(),['other','read']);
+  const handoff=ledger.assemble('fixture',{completion_reason:'insufficient_evidence',comments:[]});
+  assert.equal(handoff.observations.length,20);
+  assert.deepEqual(handoff.observations.map(call=>call.seq),Array.from({length:20},(_,index)=>index+1));
+  assert.deepEqual(handoff.observations.map(call=>call.input.id),Array.from({length:20},(_,id)=>id));
+  assert.deepEqual(handoff.observations.map(call=>call.tool_call_id),results.map(result=>{
+    assert.equal(result.status,'fulfilled');
+    return JSON.parse(String(result.value)).tool_call_id;
+  }));
+  assert.equal(handoff.observations.filter(call=>call.error?.code==='tool_call_limit_reached').length,4);
   await createAmdcLangChainTools([descriptor],runtime,{...context,runId:'second'})[0].invoke({id:0});
   assert.equal(calls,17);
 });
@@ -50,7 +85,7 @@ test('schema rejection, duplicate rejection and runtime errors consume budget wi
   assert.equal(calls,6);
 });
 
-test('MySQL and ProxySQL retain SQL structure without literal values',async()=>{
+test('MySQL and ProxySQL preserve SQL structure without literal values',async()=>{
   for(const name of ['mysql_get_all_processlist','mysql_get_all_transactions','proxysql_get_all_processlist','proxysql_get_query_digests']) {
     const definition = registry.getTool(name)!;
     assert.ok(definition);
@@ -62,10 +97,11 @@ test('MySQL and ProxySQL retain SQL structure without literal values',async()=>{
     const visible = registry.listAllTools().find(d=>d.name===definition.name)!;
     const [wrapped]=createAmdcLangChainTools([visible],{execute:async()=>result},context);
     const output=String(await wrapped.invoke({}));
-    assert.match(output,/fixture_table/);
     assert.ok(!output.includes(statement));
+    assert.match(output,/SELECT/);
     assert.match(output,/\?/);
-    assert.doesNotMatch(output,/SQL text omitted/); assert.match(output,/connectionId/);
+    assert.doesNotMatch(output,/= 1/);
+    assert.match(output,/connectionId/);
   }
 });
 
@@ -119,7 +155,18 @@ test('LangChain hides exhausted tools, preserves limit responses and continues w
       calls=[{id:'other-call',name:'other',args:{id:1},type:'tool_call' as const}];
     } else {
       assert.equal(modelCalls,6);
-      calls=[{id:'final',name:names.find(n=>n.startsWith('extract-'))!,args:{completion_reason:'insufficient_evidence',comments:[]},type:'tool_call' as const}];
+      const payloads=messages.filter(message=>message.name==='read'||message.name==='other').map(message=>JSON.parse(String(message.content)));
+      assert.equal(payloads.length,11);
+      assert.equal(new Set(payloads.map(payload=>payload.tool_call_id)).size,11);
+      const limited=payloads.filter(payload=>payload.error?.code==='tool_call_limit_reached');
+      assert.equal(limited.length,2);
+      calls=[{id:'final',name:names.find(n=>n.startsWith('extract-'))!,args:{
+        completion_reason:'insufficient_evidence',comments:limited.map(payload=>({
+          tool_call_id:payload.tool_call_id,
+          comment:{observation:null,hypothesis:null,limitation:'The tool call budget was exhausted.'},
+          related_call_ids:[payloads[0].tool_call_id]
+        }))
+      },type:'tool_call' as const}];
     }
     return {generations:[{text:'',message:new AIMessage({content:'',tool_calls:calls})}]};
   });
@@ -128,8 +175,15 @@ test('LangChain hides exhausted tools, preserves limit responses and continues w
   }},{model:'fixture',apiKey:'fixture'});
   const result=await agent.diagnose({symptom:'fixture',environment:'dev',requestedBy:'fixture',receivedAt:context.referenceTime.toISOString()});
   assert.equal(executions,9);assert.equal(peak,1);
-  assert.equal(result.observations.filter(call=>call.tool==='read').length,10);
-  assert.equal(result.observations.filter(call=>call.error?.code==='tool_call_limit_reached').length,2);
-  assert.equal(result.completion_reason,'insufficient_evidence');
-  assert.equal('status' in new TemporaryDiagnosticPresenter().createPresentation(result),false);
+  assert.equal(result.observations.filter(call=>call.status==='success').length,9);
+  assert.equal(result.observations.length,11);
+  assert.deepEqual(result.observations.map(call=>call.seq),Array.from({length:11},(_,index)=>index+1));
+  assert.deepEqual(result.observations.map(call=>call.input.id),[0,1,2,3,4,5,6,7,8,99,1]);
+  const limited=result.observations.filter(call=>call.error?.code==='tool_call_limit_reached');
+  assert.equal(limited.length,2);
+  assert.ok(limited.every(call=>call.comment?.limitation==='The tool call budget was exhausted.'));
+  assert.ok(limited.every(call=>call.related_call_ids[0]===result.observations[0].tool_call_id));
+  const presentation=new TemporaryDiagnosticPresenter().createPresentation(result);
+  assert.equal(presentation.completion_reason,'insufficient_evidence');
+  assert.equal('status' in presentation,false);
 });

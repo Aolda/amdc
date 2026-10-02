@@ -1,6 +1,6 @@
 # PRD 06. 상위 진단 구성요소 및 리포트 에이전트 인계
 
-진단과 리포트의 인계·소유권을 정의한다. 정본 흐름에는 계약 준수가 검증된 진단 포트만 연결하며, mock 연결 확인은 별도 고정 안내로 끝낸다. 기존 시제품의 미준수와 최신 리뷰 보정은 팀 검토 대상이다.
+진단과 리포트의 인계·소유권을 정의한다. 기존 V1 계약과 별도로 1차 MVP에서 팀 진단 원장을 받는 경계와 모델 예산을 정한다. MVP는 별도 스키마를 사용하며 기존 P0 전체 준수를 뜻하지 않는다.
 
 상태: 현재 개정본
 최종 검토: 2026-09-11 (리뷰 보정안, 팀 승인 대기)
@@ -12,6 +12,35 @@
 이 문서는 정본 도구 실행 정책, 정본 7필드 리포트 의미, 저장소 트랜잭션,
 검증 임계값을 소유하지 않는다. PRD 00/02가 현재 도구 정책을, PRD 03이
 리포트/전달 의미를, PRD 04가 실행 가능한 검증을 소유한다.
+
+## 1차 MVP 진단 원장 인계
+
+MVP Gate Status: ready_for_verification. 이후 기존 V1 절과 별도인 로컬 테스트 경로다.
+
+- 생산자는 PR #14의 `DiagnosisLedger`다. `DiagnosisResult.diagnosis`의
+  `DiagnosisHandoff`만 소비하며 `presentation`으로 대체하지 않는다.
+- 원장의 필드는 `diagnosis_id`, `request`, `completion_reason`, `observations`다.
+  호출마다 `seq`, `tool_call_id`, `plugin`, `tool`, `input`, `observed_at`, `status`,
+  `result`, `error`, `comment`, `related_call_ids`를 검증한다.
+  서버가 만든 `diag-UUID:call-N` 순번과 참조를 그대로 유지한다.
+- 입력은 최대 1 MiB·100호출, 요청문은 4,000자, 코멘트 각 항목은 2,000자다.
+  잘못된 ID·시각·참조·성공/오류 조합과 알 수 없는 종료 사유는 닫힌 실패 처리한다.
+  `mock` 원장은 보고서 입력으로 인정하지 않는다.
+- Report 모델에는 요청 원문, 도구 입력, SQL 행, HTTP 본문, 셸 출력을 보내지 않는다.
+  실행 결과의 제한된 메타데이터와 검증된 진단 코멘트만 투영한다.
+  코멘트는 진단 에이전트의 해석이며 원천 사실로 승격하지 않는다.
+- 중첩 문자열의 비밀정보, URL/SQL/명령 패턴, 8자 이상 원시 값의 그대로 복사를
+  거부한다. 이는 의미 수준의 비밀정보 제거·사실성 보증이 아니므로 운영 데이터
+  연결에는 별도 검토가 필요하다. 보고서 경계가 상위 진단 모델의 입력을 정제하지는 않는다.
+- 성공 호출의 해석 가능한 코멘트가 있을 때만 모델을 한 번 호출한다.
+  도구 0개, 출력 최대 256토큰, 15초 절대 기한, 자동 재시도 0,
+  전체 모델 요청 최대 96 KiB다. 출력은 기존 초안 스키마의 `suspected_cause`만 받는다.
+- 종료 사유 `investigation_complete`는 조사가 끝났다는 뜻이다. 시스템 정상이나
+  원인 확정을 뜻하지 않는다. 성공 근거가 없으면 모델 호출 없이 근거 부족을 표시한다.
+
+인터페이스 검증은 `src/report-agent/mvp-report.ts`, 연결은 `src/app/report-flow.ts`가 담당한다.
+출력·저장·Discord 의미는 [PRD 03](03-evidence-report-security.md#1차-mvp-리포트와-discord-전달)에 따른다.
+기존 V1 입력, 정적 도구 정책, REST/SQLite Run 계약은 이 MVP로 대체하지 않는다.
 
 ## 게이트 검토
 
@@ -111,8 +140,7 @@ R1이 숨겨서는 안 되는 호환성 사실:
 - 현재 봇은 임시 표시 내용을 직접 보내며 리포트 영속화 경계가 없다.
 - 현재 봇 기본 로그에는 설정된 길드 ID가 포함되어 목표 로깅 경계를 위반한다.
   향후 담당자가 검토한 어댑터 변경 전까지 이를 유지한다.
-- 위 기준 커밋(`develop@71f2069`)에는 자동화된 `test` 스크립트가 없었다.
-  이후 추가된 `npm test`는 테스트 실행 경로이며 정본 리포트 인계의 검증 완료를 뜻하지 않는다.
+- 현재 패키지에는 자동화된 `test` 스크립트가 없다.
 
 이는 향후 어댑터/호출 지점 공백이며 R0에서 제품 코드를 수정할 권한이 아니다.
 이슈 #4는 가장 작은 상위 선행조건을 소유한다. 즉 각 관찰 결과/오류에 서버가 발급한
@@ -390,7 +418,7 @@ R0 문서 인수 조건:
 2. 향후 `report-flow.ts` 추가와 위 `bot.ts` 호출 사슬 교체는 재경의 통합
    검토가 필요하다. 진단 파이프라인/내부 소유권은 그대로 유지한다.
 3. 정적 레지스트리와 YAML/전체 도구 노출의 비교는 별도 공동 결정이다.
-4. `npm test`가 추가됐어도 정본 리포트 인계의 구현 성공은 별도 검증해야 한다.
+4. 패키지에 `npm test`가 없어 구현 성공을 주장하지 않는다.
 5. 이슈 #4는 최종 리포트 에이전트를 명시적으로 제외한다. 리포트/Discord 구현은
    이슈 #7로 분리했고 `OstenHun`에게 할당했다. 이슈 #7의 GitHub 네이티브 `blocked-by #4`는
    안정적인 도구 호출 근거와 성공/오류 순서를 보존하는 크기가 제한된 진단 출력
@@ -418,12 +446,6 @@ PRD 00/02와 충돌할 때 규범 계약으로 사용하지 않는다. 삭제 �
 정적/YAML 승격은 별도 상위 결정이다. 아래 기록의 소유·필수·권고,
 포함/제외와 성공 기준 표현은 모두 과거 제안의 인용이며
 현재 구현 권한이나 인수 조건을 만들지 않는다. 이 기록은 과거 제안의 한국어 번역·재현이며 비규범적이다(원문 기준: develop@71f2069, PR #5/#6).
-
-PR #11의 시제품은 Prometheus/ProxySQL/MySQL 조회 도구와 `rawResult` 반환을 확장했다.
-일부 원시 조회 결과가 진단 에이전트의 Tool message에 전달되는 구현 상태는
-`docs/prometheus-proxysql-tools.md`와 `docs/mysql-tools.md`에 기록한다.
-이는 정본 Evidence 또는 리포트 입력 계약으로 승격되지 않으며, 원시 결과의
-비밀정보 정제와 도구 호출 예산은 PRD 00/02에 맞춰 별도로 검증해야 한다.
 
 ### 제품 범위 (과도기 기록)
 
@@ -667,7 +689,6 @@ interface ToolRuntimeContext {
 ~~~ts
 type ToolRuntimeResult =
   | { ok: true; observation: ToolObservation }
-  | { ok: true; rawResult: RawToolResult }
   | { ok: false; error: SanitizedToolError };
 ~~~
 
@@ -853,3 +874,106 @@ backend
 - 정규화된 ToolObservation을 어디에 영속화할지.
 - 첫 도구 선택 전에 과거 장애 문맥을 얼마나 주입할지.
 - 실제 AMDB 원천 중 무엇을 먼저 통합할지: Loki, Prometheus 또는 AMDB Backend API.
+
+## 2026-09-22 진단 기록 입력 자료
+
+상태: 사용자 제공 생산자 양식 및 설계 검토안. 기존 V1 계약의 교체·구현 완료 선언이 아니다.
+2026-09-25 확인: 미병합 PR #14의 `DiagnosisHandoff` 후보는 성공/오류, 종료 설명,
+호출 ID·접수 순서를 코드와 가짜 실행 테스트로 제시한다. 이 절의 원본 예시나
+정본 `ReportAgentInputV1`을 대체하지 않으며, 확인 범위와 남은 연결 조건은
+[Report Agent 설계 준비](../../design/report-agent-preparation.md#2026-09-25-생산자-인계-확인과-report-경계)를 따른다.
+이 절은 첨부 양식의 필드와 변환 공백을 소유한다. 전체 구조·출처는
+[아키텍처](../../../ARCHITECTURE.md), 설계 결정 순서는
+[Report Agent 설계 준비](../../design/report-agent-preparation.md)를 참고한다.
+앞선 2026-09-04 코드 대조의 “현재”는 당시 기준이며 최신 구현 상태로 일반화하지 않는다.
+
+### 사용자 제공 예시
+
+첨부 Image #2를 전사했다. 요청 문장, 식별자와 시간은 예시이며 실제 운영 기록이 아니다.
+자유형 결과 저장 허가나 실행 가능한 스키마로 취급하지 않는다.
+
+~~~json
+{
+  "diagnosis_id": "diag-001",
+  "request": "MySQL이 느린 것 같아",
+  "observations": [
+    {
+      "seq": 1,
+      "tool_call_id": "call-001",
+      "plugin": "mysql",
+      "tool": "mysql_get_lock_waits",
+      "input": {},
+      "observed_at": "2026-09-18T10:00:00Z",
+      "status": "success",
+      "result": {
+        "rows": [
+          {
+            "waiting_connection_id": 386,
+            "blocking_connection_id": 382
+          }
+        ],
+        "truncated": false
+      },
+      "comment": {
+        "observation": "연결 386이 연결 382의 잠금 해제를 기다리고 있다.",
+        "hypothesis": "잠금 대기가 지연과 관련됐을 가능성이 있다.",
+        "limitation": "이 결과만으로 382가 잠금을 유지하는 이유는 알 수 없다."
+      },
+      "related_call_ids": []
+    }
+  ]
+}
+~~~
+
+### 필드 의미와 작성 책임
+
+아래 책임은 설계 제안이다. 예시가 보장하지 않는 부분은 구현 전 생산자와 확정한다.
+
+| 필드 | 의미 | 제안 책임 및 검증 |
+|---|---|---|
+| diagnosis_id | 진단 묶음 식별자 | AMDC 발급. Run과의 대응·재사용 금지 범위 확정 필요 |
+| request | 사용자 증상 | 신뢰하지 않는 입력. 원문 영속화/모델 전달은 현 PRD와 별도 검토 |
+| observations | 호출 단위 조사 기록 | 성공과 실패의 순서를 함께 보존하는 배열로 설계 |
+| seq | 조사 순서 | 모델이 아닌 실행기가 발급. 제안은 1부터 연속된 호출 접수 순서 |
+| tool_call_id | 개별 호출 식별자 | 실행기 발급, 재호출은 새 ID. 모델이 생성하거나 변경하지 않음 |
+| plugin / tool | 선택된 플러그인과 도구 | 등록 목록과 실제 실행 기록이 일치해야 함 |
+| input | 실행 인수 | Tool Core가 검증·정제한 허용 인수만 남김. SQL/URL/비밀정보 제외 |
+| observed_at | 관측 시각 | 시간대·정밀도·의미를 확정. 완료 시각과 측정 구간을 혼동하지 않음 |
+| status | 도구 실행 결과 | success는 정상 판정이 아님. 실패 enum과 오류 객체는 미정 |
+| result.rows | 도구별 구조화 결과 | 원시 행이 아니라 도구별 허용 컬럼·타입·행 수·정제 검증을 거친 값 |
+| result.truncated | 결과 일부 생략 여부 | true면 검사 범위 공백. false만으로 전체 조사 완료를 보장하지 않음 |
+| comment.observation | 결과에 대한 관찰 서술 | 진단 모델 해석. 정본 증거와 대조하며 그 자체를 증거로 승격하지 않음 |
+| comment.hypothesis | 원인 가설 | 사실과 분리. 확정 원인이나 자동 조치로 변환하지 않음 |
+| comment.limitation | 알 수 없는 범위 | 최종 설명에서 보존할 대상. 정확한 출력 위치는 후속 설계 |
+| related_call_ids | 관련 호출 참조 | 같은 진단의 존재하는 ID만 허용. 빈 배열은 현재 호출 근거가 없다는 뜻이 아님 |
+
+### 기존 V1 인계로의 매핑 공백
+
+| 새 양식 | 기존 계약과 차이 | 처리 방향 |
+|---|---|---|
+| diag-001 / call-001 | run_ / tc_ 및 영속화 참조와 다름 | 서버가 보유한 명시적 대응 필요. 접두사 교체나 텍스트 매칭 금지 |
+| request | ReportAgentInputV1은 원시 문제 문장을 제외 | 현 V1 제공자 입력에서 제외. 필요하면 새 버전에서 정제 목적·보존 결정 |
+| mysql_get_lock_waits / mysql | PRD 02/03의 고정 Backend 3도구에 없음 | 현재 Evidence 1.1.0으로 강제 변환 불가. 도구별 원천/증거 계약 필요 |
+| result.rows | 현 Evidence는 tool_name별 typed payload | 전용 정규화기·판정 규칙·스키마 버전이 필요 |
+| status=success | evidence assessment / report status와 다른 개념 | 정상·문제 판정은 별도 해석기에서 수행 |
+| observed_at | 현 정본 시각은 밀리초 고정 RFC 3339 | 입력 허용 형식과 정규화 규칙을 명시. 기준 시각을 이 값으로 추정하지 않음 |
+| comment / related_call_ids | 발견·가설의 basis와 정확히 일치하지 않음 | 자기 호출과 관련 호출의 근거 집합을 명시적으로 매핑·검증 |
+| limitation | 기존 V1 incomplete_reasons와 연결 가능 | 한계를 손실 없이 보존할 매핑 및 최종 표현 계약 필요 |
+| 버전·오류·완료 표식 없음 | 닫힌 실패와 부분 기록 구분에 부족 | version, 실패 형태, 완료/부분 상태 및 호출 수 상한을 확정 |
+
+한 호출의 comment가 자기 호출을 근거로 삼는다는 규칙도 아직 제안이다.
+related_call_ids만을 근거로 사용해 빈 배열인 관찰을 버리거나, 조회 순서만으로
+인과관계를 만들지 않는다. 존재하지 않는 참조나 다른 Run 참조는 거부한다.
+
+### 구현 전 닫아야 할 입력 조건
+
+1. 진단 envelope 버전과 diagnosis_id ↔ run_id 관계, 서버 발급 call ID의 수명.
+2. 성공·timeout·권한 거부·정제 실패의 구별, 실패 시 result/error의 상호 배타성.
+3. 정상 빈 rows와 수집 실패, 잘림, 중단된 진단을 구분하는 완료/범위 정보.
+4. 도구별 결과 스키마와 source contract 버전, 관측 구간·수집 시각의 의미.
+5. request/input/result/comment 전체의 정제 시점과 각 문자열·배열·바이트 한도.
+6. 요청·기록·최종 리포트의 저장 책임/보존 기간과 리포트 제공자에 보낼 최소 투영.
+7. MySQL 지연 시나리오의 문제 판정·필수 검사·검사 범위와 새 스키마 버전.
+
+예시만으로 위 조건의 기본값을 채우거나 운영 연결하지 않는다.
+기존 V1은 그대로 유지하며 이 양식을 지원하는 개정안은 ready_for_design이다.

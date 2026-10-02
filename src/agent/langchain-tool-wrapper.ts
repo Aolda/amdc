@@ -3,7 +3,7 @@ import { localToolDetails } from "../observability/local-tool-details.js";
 import type { AmdcEnvironment } from "../config/env.js";
 import type { DiagnosticTraceSink } from "../observability/diagnostic-trace.js";
 import { jsonObjectSchemaToZod } from "./langchain-schemas.js";
-import type { AgentVisibleToolDescriptor, ToolRuntime } from "../tools/types.js";
+import type { AgentVisibleToolDescriptor, ToolRuntime, ToolRuntimeResult } from "../tools/types.js";
 import { DiagnosisLedger } from "../report/diagnosis-handoff.js";
 
 export interface LangChainToolWrapperContext {
@@ -20,104 +20,95 @@ export function createAmdcLangChainTools(
   runtime: ToolRuntime,
   context: LangChainToolWrapperContext
 ) {
-  // One set per diagnosis; reserve synchronously before parallel tool execution.
   const executed = new Set<string>();
   const ledger = context.ledger ?? new DiagnosisLedger(context.runId);
   const disabledTools = context.disabledTools ?? new Set<string>();
   const attemptsByTool = new Map<string, number>();
   let tail: Promise<unknown> = Promise.resolve();
   return descriptors.map((descriptor) => {
-    const wrapped = tool(
-      async (args: Record<string, unknown>) => {
-        const call = ledger.begin(descriptor, args);
-        const startedAt = Date.now();
-        await context.traceSink.record({
-          event: "tool.started",
-          runId: context.runId,
-          occurredAt: new Date().toISOString(),
-          plugin: descriptor.pluginName,
-          tool: descriptor.name,
-          ...(["mysql", "prometheus"].includes(descriptor.pluginName) ? localToolDetails(context.environment, args) : {})
-        });
-
-        const key = JSON.stringify([descriptor.name, Object.entries(args).sort(([a], [b]) => a.localeCompare(b))]);
-        const duplicate = executed.has(key);
-        executed.add(key);
-        const result = duplicate ? {
-          ok: false as const,
-          error: {
-            toolName: descriptor.name,
-            pluginName: descriptor.pluginName,
-            code: "invalid_input" as const,
-            message: "Identical tool input was already requested in this diagnosis. Use its earlier result; choose a different query or finish with the available evidence.",
-            occurredAt: new Date().toISOString()
-          }
-        } : await runtime.execute(
-          {
-            toolName: descriptor.name,
-            args
-          },
-          {
-            environment: context.environment,
-            referenceTime: context.referenceTime
-          }
-        ).catch(() => ({
-          ok: false as const,
-          error: {
-            toolName: descriptor.name,
-            pluginName: descriptor.pluginName,
-            code: "source_request_failed" as const,
-            message: "Tool execution failed unexpectedly.",
-            occurredAt: new Date().toISOString()
-          }
-        }));
-
-        ledger.finish(call, result);
-
-        await context.traceSink.record({
-          event: "tool.finished",
-          runId: context.runId,
-          occurredAt: new Date().toISOString(),
-          plugin: descriptor.pluginName,
-          tool: descriptor.name,
-          durationMs: Date.now() - startedAt,
-          outcome: result.ok ? "succeeded" : "failed",
-          ...(["mysql", "prometheus"].includes(descriptor.pluginName) ? localToolDetails(context.environment, args, result) : {}),
-          ...(result.ok &&
-          "rawResult" in result &&
-          result.rawResult.transport === "local_shell"
-            ? { exitCode: result.rawResult.execution.exitCode }
-            : {}),
-          ...(!result.ok ? { errorCode: result.error.code } : {})
-        });
-
-        return JSON.stringify({ tool_call_id: call.tool_call_id, seq: call.seq, ...result });
-      },
-      {
-        name: descriptor.name,
-        description: descriptor.description,
-        schema: jsonObjectSchemaToZod(descriptor.inputSchema)
-      }
-    );
-    const limited = tool(async (args: Record<string, unknown>) => {
+    const execute = async (args: Record<string, unknown>, limitReached = false) => {
       const call = ledger.begin(descriptor, args);
-      const result = { ok: false as const, error: {
-        toolName: descriptor.name, pluginName: descriptor.pluginName,
-        code: "tool_call_limit_reached" as const,
-        message: "This tool is disabled for this diagnosis after 8 attempts. Use its earlier results or another available tool. If evidence is insufficient, report that limitation.",
-        occurredAt: new Date().toISOString()
-      } };
+      const startedAt = Date.now();
+      await context.traceSink.record({
+        event: "tool.started",
+        runId: context.runId,
+        occurredAt: new Date().toISOString(),
+        plugin: descriptor.pluginName,
+        tool: descriptor.name,
+        ...(["mysql", "prometheus"].includes(descriptor.pluginName) ? localToolDetails(context.environment, args) : {})
+      });
+
+      const key = JSON.stringify([descriptor.name, Object.entries(args).sort(([a], [b]) => a.localeCompare(b))]);
+      const duplicate = executed.has(key);
+      if (!limitReached) executed.add(key);
+      const result: ToolRuntimeResult = limitReached ? {
+        ok: false,
+        error: {
+          toolName: descriptor.name,
+          pluginName: descriptor.pluginName,
+          code: "tool_call_limit_reached",
+          message: "This tool is disabled for this diagnosis after 8 attempts. Use its earlier results or another available tool. If evidence is insufficient, report that limitation.",
+          occurredAt: new Date().toISOString()
+        }
+      } : duplicate ? {
+        ok: false,
+        error: {
+          toolName: descriptor.name,
+          pluginName: descriptor.pluginName,
+          code: "invalid_input",
+          message: "Identical tool input was already requested in this diagnosis. Use its earlier result; choose a different query or finish with the available evidence.",
+          occurredAt: new Date().toISOString()
+        }
+      } : await runtime.execute(
+        { toolName: descriptor.name, args },
+        { environment: context.environment, referenceTime: context.referenceTime }
+      ).catch(() => ({
+        ok: false as const,
+        error: {
+          toolName: descriptor.name,
+          pluginName: descriptor.pluginName,
+          code: "source_request_failed" as const,
+          message: "Tool execution failed unexpectedly.",
+          occurredAt: new Date().toISOString()
+        }
+      }));
+
       ledger.finish(call, result);
+      await context.traceSink.record({
+        event: "tool.finished",
+        runId: context.runId,
+        occurredAt: new Date().toISOString(),
+        plugin: descriptor.pluginName,
+        tool: descriptor.name,
+        durationMs: Date.now() - startedAt,
+        outcome: result.ok ? "succeeded" : "failed",
+        ...(["mysql", "prometheus"].includes(descriptor.pluginName) ? localToolDetails(context.environment, args, result) : {}),
+        ...(result.ok && "rawResult" in result && result.rawResult.transport === "local_shell"
+          ? { exitCode: result.rawResult.execution.exitCode }
+          : {}),
+        ...(!result.ok ? { errorCode: result.error.code } : {})
+      });
       return JSON.stringify({ tool_call_id: call.tool_call_id, seq: call.seq, ...result });
-    }, { name: descriptor.name, description: descriptor.description,
-      schema: jsonObjectSchemaToZod(descriptor.inputSchema) });
+    };
+    const wrapped = tool((args: Record<string, unknown>) => execute(args), {
+      name: descriptor.name,
+      description: descriptor.description,
+      schema: jsonObjectSchemaToZod(descriptor.inputSchema)
+    });
+    // Exhausted calls still return a ToolMessage and retain their original input in the ledger.
+    const limited = tool((args: Record<string, unknown>) => execute(args, true), {
+      name: descriptor.name,
+      description: descriptor.description,
+      schema: jsonObjectSchemaToZod({ type: "object", properties: {} }).passthrough()
+    });
     const invoke = wrapped.invoke.bind(wrapped);
     wrapped.invoke = (input, config) => {
+      // Count by tool identity, independent of arguments, before any await.
       const attempts = (attemptsByTool.get(descriptor.name) ?? 0) + 1;
       attemptsByTool.set(descriptor.name, Math.min(attempts, 9));
       if (attempts >= 8) disabledTools.add(descriptor.name);
-      if (attempts > 8) return limited.invoke(input, config);
-      const pending = tail.then(() => invoke(input, config));
+      // Queue limit responses too so ledger IDs follow the same dispatch order.
+      const pending = tail.then(() => attempts > 8 ? limited.invoke(input, config) : invoke(input, config));
       tail = pending.then(() => undefined, () => undefined);
       return pending;
     };
