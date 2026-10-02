@@ -90,6 +90,41 @@ test("real ledger reaches fake model, persistent reload, then one safe Discord a
   });
 });
 
+test("multiline symptoms survive diagnosis and reach persisted Discord reports", async () => {
+  for (const symptom of ["SYMPTOM_INPUT_ONLY\nsecond line", "SYMPTOM_INPUT_ONLY\r\nsecond line", "SYMPTOM_INPUT_ONLY\tcolumn"]) {
+    await withDirectory(async directory => {
+      const handoff = reportMvpFixture();
+      const store = createFileMvpReportStore(directory, detector);
+      const fake = model();
+      const received: string[] = [];
+      const flow = createReportFlow({
+        diagnose: async input => {
+          received.push(input.symptom);
+          const diagnosis = { ...handoff, request: input.symptom };
+          return { diagnosis, presentation: diagnosis };
+        },
+        model: fake.adapter, store, containsSecret: detector,
+      });
+      const current = interaction({ options: { getString: () => symptom } });
+      const handler = createReportCommandHandler({
+        guildId: "guild-1", runnerMode: "langchain", now: () => 1000,
+        runReport: input => flow(input, context), containsSecret: detector, log: () => undefined,
+      });
+      await handler(current.value);
+      assert.deepEqual(received, [symptom]);
+      assert.equal(fake.calls.length, 1);
+      const saved = await store.read(handoff.diagnosis_id);
+      assert.ok(saved);
+      assert.equal(current.edits.length, 1);
+      const payload = current.edits[0];
+      assert.equal(payload.files?.length, 1);
+      for (const output of [JSON.stringify(fake.calls), JSON.stringify(saved), payload.content, payload.files![0].attachment.toString("utf8")]) {
+        assert.doesNotMatch(output, /SYMPTOM_INPUT_ONLY/);
+      }
+    });
+  }
+});
+
 test("duplicate interaction objects claim once before acknowledgement", async () => {
   await withDirectory(async (directory) => {
     const handoff = reportMvpFixture();

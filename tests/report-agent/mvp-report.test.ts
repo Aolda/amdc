@@ -92,6 +92,35 @@ test("transport completion without a diagnostic comment does not ask the model f
   assert.equal(model.calls.length, 0);
 });
 
+test("multiline request stays outside report model input and report output", async () => {
+  const input = handoff();
+  input.request = "SYMPTOM_INPUT_ONLY\nfirst sample\r\nsecond\tcolumn";
+  const model = new Model();
+  const report = await createMvpReport(input, { model, containsSecret: scanner });
+  assert.equal(model.calls.length, 1);
+  assert.doesNotMatch(JSON.stringify(model.calls), /SYMPTOM_INPUT_ONLY/);
+  assert.doesNotMatch(JSON.stringify(report), /SYMPTOM_INPUT_ONLY/);
+  assert.equal(input.request, "SYMPTOM_INPUT_ONLY\nfirst sample\r\nsecond\tcolumn");
+});
+
+test("request still rejects non-text, empty, whitespace-only and oversized input", async () => {
+  for (const request of [null, 42, {}, "", "\t\r\n", "x".repeat(4001)]) {
+    const input = handoff();
+    input.request = request;
+    const model = new Model();
+    await code(input, "invalid_report_generation", model);
+    assert.equal(model.calls.length, 0);
+  }
+});
+
+test("report output still rejects multiline interpretation", async () => {
+  const call = mysql();
+  call.comment = { observation: "first\nsecond", hypothesis: null, limitation: null };
+  const model = new Model();
+  await code(handoff([call]), "invalid_report_generation", model);
+  assert.equal(model.calls.length, 0);
+});
+
 test("failed and truncated calls remain explicit when another call succeeds", async () => {
   const first = mysql();
   (first.result as Input).rows = [{ body: "hidden" }];

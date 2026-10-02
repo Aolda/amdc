@@ -217,7 +217,8 @@ function parseHandoff(value: unknown, containsSecret: (value: string) => boolean
   const source = record(value, ["diagnosis_id", "request", "completion_reason", "observations"]);
   const diagnosisId = string(source.diagnosis_id, 41);
   if (!DIAG_ID.test(diagnosisId)) invalid();
-  string(source.request, MAX_REQUEST);
+  // Match accepted symptom text; the request is never projected into the report.
+  if (typeof source.request !== "string" || !source.request.trim() || source.request.length > MAX_REQUEST) invalid();
   if (source.completion_reason !== "investigation_complete" && source.completion_reason !== "insufficient_evidence") invalid();
   if (!Array.isArray(source.observations) || source.observations.length > MAX_CALLS) invalid();
   const ids = source.observations.map((_, index) => `${diagnosisId}:call-${index + 1}`);
