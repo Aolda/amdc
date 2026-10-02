@@ -52,7 +52,7 @@ Gate Status: <blocked | ready_for_design | ready_for_implementation | ready_for_
 
 - 의존성 또는 TypeScript 변경 후 `npm run typecheck`와 `npm run build`를 실행합니다.
 - 의존성이 없거나 잠금 파일이 변경된 경우에만 `npm ci`를 사용합니다.
-- `npm test`는 현재 코드 테스트를 재귀적으로 실행하며 테스트 파일이 없으면 실패합니다. 통과 범위는 실행된 테스트에 한정하고 정본 P0 완료로 확대하지 않습니다.
+- `npm test`는 현재 코드의 TypeScript 테스트 타입 검사 후 테스트를 재귀적으로 실행하며 테스트 파일이 없으면 실패합니다. 통과 범위는 실행된 테스트에 한정하고 전체 P0 또는 실제 원천 검증 완료로 해석하지 않습니다.
 - 단위, 통합, 동시성 검증은 사용자가 실제 환경을 명시적으로 승인하지 않는 한 가짜 제공자와 가짜 도구를 사용해야 합니다.
 
 ## AMDC 기본값
